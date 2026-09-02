@@ -1,11 +1,11 @@
 #!/bin/sh
 . "$(dirname "$0")/lib.sh"
 
-. packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh
+. packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/records.sh
 
 TT_RECORDS=tests/fixtures/records/minimal.tsv
 
-assert_eq "selective" "$(tt_get main.mode)" "tt_get reads a scalar"
+assert_eq "1" "$(tt_get main.enabled)" "tt_get reads a scalar"
 assert_eq "" "$(tt_get main.nosuch)" "tt_get returns empty for missing key"
 assert_eq "fallback" "$(tt_get main.nosuch fallback)" "tt_get honours default"
 assert_eq "true" "$(tt_bool main.enabled)" "tt_bool maps 1 to true"

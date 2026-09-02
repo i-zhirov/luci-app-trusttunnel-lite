@@ -54,7 +54,7 @@ jobs:
           # `docker run -v <FEED_DIR>:/feed`, а docker трактует относительное
           # значение не как каталог, а как ИМЯ ТОМА: в контейнер приезжает
           # пустой том, фид выходит пустым, и сборка падает на
-          # `make package/luci-app-trusttunnel/download`. Проверено локально:
+          # `make package/luci-app-trusttunnel-lite/download`. Проверено локально:
           # `docker run -v packages:/feed alpine ls /feed` показывает пустоту.
           #
           # Весь репозиторий — потому что вместе с packages/ в контейнер обязан
@@ -62,24 +62,24 @@ jobs:
           # (findrev в luci.mk), и без репозитория срабатывает запасная ветка
           # с меткой времени: вместо 26.238.08051~9f6fb1a получается
           # 0.260826.21528. Это не косметика — apk видит в такой версии
-          # ПОНИЖЕНИЕ и пишет «Downgrading luci-i18n-trusttunnel-ru
+          # ПОНИЖЕНИЕ и пишет «Downgrading luci-i18n-trusttunnel-lite-ru
           # (26.237.58633~00f8120 -> 0.260826.21528)». Проверено на живом
           # роутере через `apk add --simulate`.
           FEED_DIR: ${{ github.workspace }}
           ARTIFACTS_DIR: ${{ github.workspace }}/out
-          PACKAGES: luci-app-trusttunnel
+          PACKAGES: luci-app-trusttunnel-lite
 
       - name: Collect artifacts
         run: |
           mkdir -p dist
           # Сборка производит ДВА пакета: сам luci-app и пакет перевода,
-          # который luci.mk генерирует из po/ru как luci-i18n-trusttunnel-ru.
-          find out/bin/ -name 'luci-app-trusttunnel*.apk' -exec cp {} dist/ \;
+          # который luci.mk генерирует из po/ru как luci-i18n-trusttunnel-lite-ru.
+          find out/bin/ -name 'luci-app-trusttunnel-lite*.apk' -exec cp {} dist/ \;
           find out/bin/ -name 'luci-i18n-trusttunnel-*.apk' -exec cp {} dist/ \;
           ls -la dist/
           # Отсутствие любого из двух пакетов — ошибка сборки, и заметить её
           # надо здесь, а не у пользователя.
-          ls dist/luci-app-trusttunnel*.apk >/dev/null
+          ls dist/luci-app-trusttunnel-lite*.apk >/dev/null
           ls dist/luci-i18n-trusttunnel-*.apk >/dev/null
 
       - name: Upload Artifact

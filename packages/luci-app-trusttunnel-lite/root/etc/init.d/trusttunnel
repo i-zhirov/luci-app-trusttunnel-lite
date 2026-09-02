@@ -1,0 +1,481 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=10
+
+LIBDIR=/usr/libexec/trusttunnel
+OUTDIR=/var/etc/trusttunnel
+RECORDS=$OUTDIR/settings.tsv
+CLIENT=/opt/trusttunnel_client/trusttunnel_client
+
+# Клиент статически слинкован с BoringSSL и берёт хранилище доверия из
+# SSL_CERT_FILE. Ванильный OpenWrt без ca-bundle не имеет его вовсе.
+setup_trust_store() {
+	# Хранилище доверия не нужно в двух случаях: проверка сертификата
+	# отключена, либо сертификат endpoint закреплён в конфигурации. Раньше
+	# сообщение об ошибке обещало оба выхода, но код не реализовывал ни
+	# одного, и роутер без ca-bundle не мог подключиться даже к серверу с
+	# закреплённым самоподписанным сертификатом — то есть настройка
+	# skip_verification не работала вообще.
+	config_load trusttunnel
+	config_get_bool _skipver endpoint skip_verification 0
+	config_get _pinned endpoint certificate
+	if [ "$_skipver" = "1" ] || [ -n "$_pinned" ]; then
+		return 0
+	fi
+	for f in /etc/ssl/cert.pem /etc/ssl/certs/ca-certificates.crt; do
+		if [ -s "$f" ]; then
+			export SSL_CERT_FILE="$f"
+			[ -d /etc/ssl/certs ] && export SSL_CERT_DIR=/etc/ssl/certs
+			return 0
+		fi
+	done
+	logger -t trusttunnel "error: no CA bundle found; install ca-bundle, pin a certificate, or disable verification"
+	return 1
+}
+
+# Сертификат проверяется по системным часам: до синхронизации NTP любой
+# сертификат выглядит ещё не действительным.
+wait_for_time() {
+	floor=$(date -r "$LIBDIR/gen-config" +%s 2>/dev/null) || floor=1750000000
+	waited=0
+	while [ "$(date +%s)" -lt "$floor" ] && [ "$waited" -lt 30 ]; do
+		sleep 2
+		waited=$((waited + 2))
+	done
+	# Молчаливый выход по таймауту делал бы отказ недиагностируемым: клиент
+	# отверг бы сертификат как «ещё не действительный», а в логе не было бы
+	# ничего, что указывало бы на часы.
+	if [ "$(date +%s)" -lt "$floor" ]; then
+		logger -t trusttunnel "warning: clock still behind install time; certificate validation may fail"
+	fi
+}
+
+wait_for_wan() {
+	waited=0
+	while [ "$waited" -lt 30 ]; do
+		[ -n "$(ip route show default 2>/dev/null)" ] && return 0
+		sleep 1
+		waited=$((waited + 1))
+	done
+	logger -t trusttunnel "warning: no default route after 30s"
+	return 0
+}
+
+regenerate() {
+	# Права выставляются umask, а не chmod после создания: иначе между
+	# созданием файла и chmod остаётся окно, в котором пароль endpoint и
+	# приватный сертификат читаемы всем.
+	umask 077
+	mkdir -p "$OUTDIR"
+	# Пишем во временный файл и переносим по успеху: `>` обрезает цель сразу,
+	# и отказ посреди записи (uci-export упал, кончилось место) уничтожил бы
+	# запись о применённом состоянии, из которой stop_service потом снимает
+	# маршрутизацию — снимать было бы уже нечего.
+	"$LIBDIR/uci-export" > "$RECORDS.new" || { rm -f "$RECORDS.new"; return 1; }
+	mv "$RECORDS.new" "$RECORDS"
+
+	# Сертификат минует records (PEM многострочный) и передаётся файлом.
+	cert=""
+	cert_value=$(uci -q get trusttunnel.endpoint.certificate 2>/dev/null)
+	if [ -n "$cert_value" ]; then
+		printf '%s\n' "$cert_value" > "$OUTDIR/endpoint.pem"
+		chmod 600 "$OUTDIR/endpoint.pem"
+		cert="$OUTDIR/endpoint.pem"
+	else
+		rm -f "$OUTDIR/endpoint.pem"
+	fi
+
+	"$LIBDIR/gen-config" "$RECORDS" "$cert" > "$OUTDIR/client.toml" || return 1
+	chmod 600 "$OUTDIR/client.toml"
+	return 0
+}
+
+# Откатывает оптимизацию restart(), если start_service не смог дойти до конца.
+# Расчёт «разбирать не нужно» держался на том, что start поднимет всё заново;
+# если он до этого не дошёл, служба выключена, а таблица, правило по отметке и
+# blackhole остались бы висеть, указывая на туннель, которого нет. Помеченный
+# трафик уходил бы в blackhole при выключенном обходе — со стороны это выглядит
+# как «интернет пропал», и связать это с неудавшимся применением настроек
+# невозможно.
+abort_restart_cleanup() {
+	if [ "${_TT_KEEP_ROUTING:-0}" = "1" ]; then
+		_TT_KEEP_ROUTING=0
+		[ -f "$OUTDIR/settings.tsv" ] && "$LIBDIR/routing" down "$OUTDIR/settings.tsv"
+	fi
+}
+
+
+# Наибольший ifindex среди всех интерфейсов. ifindex монотонно растёт, поэтому
+# он — надёжный признак «появилось ПОСЛЕ этого момента», в отличие от имени.
+max_ifindex() {
+	_max=0
+	for _n in /sys/class/net/*; do
+		_i=$(cat "$_n/ifindex" 2>/dev/null) || continue
+		[ "$_i" -gt "$_max" ] 2>/dev/null && _max="$_i"
+	done
+	printf '%s\n' "$_max"
+}
+
+# Печатает НЕпостоянные tun-устройства с ifindex больше заданного.
+# Признак tun — наличие /sys/class/net/<dev>/tun_flags (проверено на живом
+# роутере: у tt0 и tun0 он есть, у br-lan нет). Бит IFF_PERSIST (0x800)
+# отсекает устройства, созданные вручную через `ip tuntap add`: клиент создаёт
+# своё без него.
+new_client_devices() {
+	_since="$1"
+	for _n in /sys/class/net/*; do
+		[ -e "$_n/tun_flags" ] || continue
+		_i=$(cat "$_n/ifindex" 2>/dev/null) || continue
+		[ "$_i" -gt "$_since" ] 2>/dev/null || continue
+		_f=$(cat "$_n/tun_flags" 2>/dev/null) || continue
+		[ "$(( _f & 0x800 ))" = "0" ] || continue
+		printf '%s\n' "${_n##*/}"
+	done
+}
+
+# Ждёт появления НОВОГО tun-устройства и привязывает к нему маршрут.
+# $1 — путь к файлу со снимком списка, снятым ДО старта клиента.
+#
+# Имя своего устройства клиент выбирает сам и настройкой не управляется,
+# поэтому единственный надёжный способ его узнать — сравнить список до и после.
+# Гадать по имени нельзя: tun0 может уже принадлежать другому VPN на этом же
+# роутере, и мы направили бы туннельный трафик в чужой интерфейс.
+#
+# Ожидание ограничено 30 секундами. Клиент поднимает устройство за доли секунды
+# после успешного подключения, но подключение может и не состояться — нет сети,
+# неверный адрес, отказ сервера. Бесконечное ожидание повесило бы start_service,
+# а отсутствие ожидания означало бы, что маршрут не поставится никогда. Пока
+# устройства нет, помеченный трафик держит blackhole, поставленный в do_up, —
+# то есть неудача здесь не открывает утечку, а оставляет killswitch включённым.
+# ОДНА попытка привязки, без ожидания.
+#
+# Здесь БЫЛ цикл ожидания на 30 секунд, и он не мог сработать никогда: procd
+# запускает процесс инстанса только ПОСЛЕ возврата из start_service, поэтому
+# внутри start_service клиента ещё не существует и создавать устройство некому.
+# Измерено на живом роутере: `/etc/init.d/trusttunnel start` занимал 31 секунду,
+# каждый запуск писал в журнал ложное предупреждение «клиент не создал
+# устройство», а настоящую привязку делал hotplug-скрипт.
+#
+# Основной механизм — /etc/hotplug.d/net/40-trusttunnel: он срабатывает ровно
+# тогда, когда устройство появляется, и покрывает как первый запуск, так и
+# пересоздание устройства после перезапуска клиента силами procd.
+#
+# Эта попытка нужна для краевого случая, когда подходящее устройство УЖЕ есть и
+# события add не будет: например служба перезапускается поверх ещё живого
+# клиента. Стоит она одну проверку sysfs.
+attach_client_device() {
+	_new=$(new_client_devices "$1" | head -n1)
+	[ -n "$_new" ] || return 0
+	"$LIBDIR/routing" attach "$RECORDS" "$OUTDIR" "$_new"
+}
+
+start_service() {
+	config_load trusttunnel
+	config_get_bool enabled main enabled 0
+	[ "$enabled" = "1" ] || {
+		logger -t trusttunnel "disabled in configuration, not starting"
+		abort_restart_cleanup
+		return 0
+	}
+
+	[ -x "$CLIENT" ] || {
+		logger -t trusttunnel "error: $CLIENT not found; run install.sh"
+		abort_restart_cleanup
+		return 1
+	}
+
+	setup_trust_store || { abort_restart_cleanup; return 1; }
+	regenerate || {
+		logger -t trusttunnel "error: configuration generation failed"
+		abort_restart_cleanup
+		return 1
+	}
+
+	wait_for_wan
+	wait_for_time
+
+	"$LIBDIR/routing" up "$RECORDS" "$OUTDIR" || {
+		logger -t trusttunnel "error: routing setup failed"
+		abort_restart_cleanup
+		return 1
+	}
+
+	# Снимок tun-устройств СТРОГО до старта клиента: разница со списком после
+	# старта и даёт имя устройства, которое создал клиент.
+	# Отметка по ifindex СТРОГО до старта клиента. Сравнение по ИМЕНИ здесь не
+	# работает: при перезапуске устройство прежнего клиента ещё не исчезло в
+	# момент снимка — procd убивает процесс асинхронно, а устройство уходит
+	# вместе с ним, — поэтому «нового имени» не появлялось и ожидание отваливалось
+	# по таймауту. Проверено на живом роутере по журналу: предупреждение о
+	# таймауте и успешная привязка через hotplug приходили одной секундой.
+	# ifindex монотонно растёт, поэтому пересозданное устройство отличимо даже
+	# под тем же именем.
+	_tun_since=$(max_ifindex)
+
+	procd_open_instance trusttunnel
+	procd_set_param command "$CLIENT" -c "$OUTDIR/client.toml"
+	# Переменные передаются только если хранилище доверия действительно
+	# определено. При закреплённом сертификате или отключённой проверке
+	# setup_trust_store выходит рано, и пустой SSL_CERT_FILE сбивал бы
+	# BoringSSL вместо того чтобы просто отсутствовать.
+	if [ -n "$SSL_CERT_FILE" ]; then
+		# SSL_CERT_DIR передаётся ТОЛЬКО когда непусто — тот же риск, что
+		# соседний комментарий описывает для SSL_CERT_FILE: пустое значение
+		# переменной окружения для BoringSSL не то же самое, что отсутствие
+		# переменной, и может сбить поиск хранилища доверия вместо того чтобы
+		# просто не участвовать в нём.
+		if [ -n "${SSL_CERT_DIR:-}" ]; then
+			procd_set_param env SSL_CERT_FILE="$SSL_CERT_FILE" SSL_CERT_DIR="$SSL_CERT_DIR"
+		else
+			procd_set_param env SSL_CERT_FILE="$SSL_CERT_FILE"
+		fi
+	fi
+	procd_set_param respawn 3600 5 0
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param pidfile /var/run/trusttunnel.pid
+	procd_close_instance
+
+	# Привязка к устройству клиента — задача hotplug-скрипта: procd запускает
+	# процесс только ПОСЛЕ возврата отсюда, поэтому дожидаться устройства здесь
+	# бессмысленно (см. комментарий у attach_client_device). Этот вызов лишь
+	# покрывает случай уже существующего устройства и не ждёт.
+	attach_client_device "$_tun_since" || true
+}
+
+stop_service() {
+	# Маршрутизация разбирается ВСЕГДА, кроме одного случая: apply_settings
+	# уже сравнил настройки и знает, что ни номер таблицы, ни отметка не
+	# менялись, поэтому правила, которые start_service загрузит заново, будут
+	# теми же. Снимать их между stop и start незачем: пока клиент
+	# поднимается, помеченный трафик должен упираться в blackhole, а не
+	# утекать напрямую мимо туннеля, — а именно это и происходило, потому что
+	# без таблицы маркировать трафик нечем.
+	#
+	# Признак по умолчанию НЕ выставлен, и это осознанно: ручной restart,
+	# триггер интерфейса и любой другой вызов ведут себя в точности как
+	# раньше. Дешёвый путь включается только там, где о неизменности
+	# настроек есть доказательство.
+	if [ "${_TT_KEEP_ROUTING:-0}" != "1" ]; then
+		[ -f "$OUTDIR/settings.tsv" ] && "$LIBDIR/routing" down "$OUTDIR/settings.tsv"
+	fi
+	return 0
+}
+
+# Уникальные ключи, которыми различаются два records-файла.
+#
+# Считает ВХОЖДЕНИЯ строк, а не сравнивает множества: list-опции выгружаются
+# в records повторяющимся ключом (несколько строк "domains.direct"), и при
+# сравнении множеств добавление второго значения к уже существующему ключу
+# осталось бы незамеченным — снятая или поставленная галочка не применялась бы.
+#
+# awk, а не comm: comm требует отсортированного ввода и присутствует не во всех
+# сборках busybox, а awk есть всегда и обходится одним проходом по каждому файлу.
+changed_keys() {
+	awk -F'\t' '
+		FILENAME == ARGV[1] { seen[$0]++; next }
+		{ seen[$0]-- }
+		END {
+			for (l in seen) if (seen[l] != 0) {
+				split(l, p, "\t")
+				out[p[1]] = 1
+			}
+			for (k in out) print k
+		}
+	' "$1" "$2" | sort -u
+}
+
+# Минимальное действие, которого требует изменение одного ключа.
+# $1 — ключ.
+#
+# Классы по возрастанию стоимости:
+#   noop         — ничего применять не нужно
+#   reload       — перегенерировать и применить к ядру, клиента не трогать
+#   restart      — перезапустить клиента, маршрутизацию сохранить
+#   restart_full — перезапустить клиента и разобрать маршрутизацию полностью
+#
+# Перечисление ЯВНОЕ и работает как whitelist: всё незнакомое получает
+# restart_full, то есть в точности то поведение, которое было до появления
+# этого разбора. Ошибка в сторону «дороже» стоит лишний перезапуск, ошибка в
+# сторону «дешевле» означает молча непримененную настройку — интерфейс
+# показывает новое значение, а работает старое, и диагностировать это нечем.
+# Полнота перечисления против схемы uci-export проверяется тестом.
+change_class() {
+	case "$1" in
+		# domains.direct уходит в client.toml (exclusions клиента), а его
+		# клиент читает один раз при запуске.
+		domains.direct)
+			printf 'restart\n' ;;
+		# Всё, из чего собирается nft-таблица и правило по отметке.
+		network.lan_devices|network.blackhole_on_down|\
+		network.include_router_traffic)
+			printf 'reload\n' ;;
+		# Номер таблицы и отметка — единственные значения, по которым
+		# маршрутизация СНИМАЕТСЯ. Сохранить прежнюю и поднять новую значило
+		# бы оставить старую таблицу и старое правило висеть навсегда.
+		network.table|network.fwmark)
+			printf 'restart_full\n' ;;
+		# Выключение службы обязано снять маршрутизацию: иначе помеченный
+		# трафик остался бы уходить в blackhole при выключенном обходе.
+		main.enabled)
+			printf 'restart_full\n' ;;
+		# Остальное уходит в client.toml, а его клиент читает один раз при
+		# запуске. endpoint.* перечислен шаблоном намеренно: в этой секции
+		# нет и не может появиться значения, не попадающего в конфиг клиента.
+		main.log_level|network.mtu|endpoint.*)
+			printf 'restart\n' ;;
+		*)
+			printf 'restart_full\n' ;;
+	esac
+}
+
+class_rank() {
+	case "$1" in
+		noop) printf '0\n' ;;
+		reload) printf '1\n' ;;
+		restart) printf '2\n' ;;
+		*) printf '3\n' ;;
+	esac
+}
+
+# Дороже из двух классов.
+class_max() {
+	if [ "$(class_rank "$1")" -ge "$(class_rank "$2")" ]; then
+		printf '%s\n' "$1"
+	else
+		printf '%s\n' "$2"
+	fi
+}
+
+# Действие, которого требует переход от одного records-состояния к другому:
+# максимум по всем изменившимся ключам. Максимум, а не первый или последний, —
+# дешёвая правка рядом с дорогой не должна её обесценивать.
+classify_change() {
+	_best=noop
+	for _k in $(changed_keys "$1" "$2"); do
+		_best=$(class_max "$_best" "$(change_class "$_k")")
+	done
+	printf '%s\n' "$_best"
+}
+
+# Переопределяет generic restart() из /etc/rc.common (stop; start). Между
+# остановкой и запуском маршрутизация пересоздаётся заново — если только
+# apply_settings не сохранил её через _TT_KEEP_ROUTING.
+restart() {
+	# trap '' TERM — как в generic restart() из /etc/rc.common: этот
+	# процесс часто запускается отдельно (триггер интерфейса, cron, Save &
+	# Apply), и TERM, полученный посреди stop+start, не должен обрывать
+	# восстановление маршрутизации и клиента на середине.
+	trap '' TERM
+	stop "$@"
+	start "$@"
+}
+
+# Применяет изменившиеся настройки минимальным действием, которое их
+# действительно применяет.
+#
+# ЗАЧЕМ. Раньше здесь стоял безусловный restart, и любая правка — хоть одна
+# строка в domains.direct — убивала клиента: туннель рвался на несколько
+# секунд. Вместе с ним между stop и start исчезала nft-таблица, так что
+# помеченный трафик LAN успевал уйти НАПРЯМУЮ — обычное сохранение настроек
+# само открывало ровно ту утечку, от которой этот пакет защищает. При этом
+# клиент читает client.toml один раз при запуске, а правка, которая до
+# client.toml не доходит, к его перезапуску отношения не имеет вовсе.
+#
+# Решение принимается по diff'у записи о применённом состоянии с тем, что
+# выгружается из UCI сейчас; ключи классифицирует change_class. Любой отказ по
+# дороге откатывается к полному перезапуску: правила в ядре в этот момент в
+# неизвестном состоянии, и оставить всё как есть значило бы показывать
+# работающую службу поверх недогруженной таблицы.
+apply_settings() {
+	# Сравнивать не с чем — это обычный старт, а не применение поверх
+	# известного состояния. /var на OpenWrt в tmpfs, поэтому после
+	# перезагрузки записи нет вовсе. То же и для остановленной службы.
+	if [ ! -f "$RECORDS" ] || ! running >/dev/null 2>&1; then
+		restart
+		return $?
+	fi
+
+	# Тот же umask, что в regenerate: в records попадает пароль endpoint, и
+	# создавать файл под системным umask значило бы оставить его читаемым
+	# всем — ровно та экспозиция, которую regenerate уже закрыл.
+	umask 077
+	mkdir -p "$OUTDIR"
+	if ! "$LIBDIR/uci-export" > "$RECORDS.next"; then
+		# Файл удаляется и на этом пути: недописанный, он всё равно может
+		# содержать пароль.
+		rm -f "$RECORDS.next"
+		logger -t trusttunnel "warning: settings export failed, applying the long way"
+		restart
+		return $?
+	fi
+
+	_class=$(classify_change "$RECORDS" "$RECORDS.next")
+
+	# Сертификат — единственное значение схемы, которого в records нет: PEM
+	# многострочный, а значение записи перевод строки содержать не может.
+	# Сверяется с файлом, который regenerate записал при последнем
+	# применении; без этой сверки смена или удаление сертификата не
+	# применялись бы вовсе, потому что records при них не меняется.
+	_cert_now=$(uci -q get trusttunnel.endpoint.certificate 2>/dev/null)
+	_cert_was=""
+	[ -f "$OUTDIR/endpoint.pem" ] && _cert_was=$(cat "$OUTDIR/endpoint.pem" 2>/dev/null)
+	if [ "$_cert_now" != "$_cert_was" ]; then
+		_class=$(class_max "$_class" restart)
+	fi
+
+	case "$_class" in
+		noop)
+			# Запись обновляется и здесь. Иначе изменившийся ключ остался бы
+			# отличаться от применённого состояния и участвовал бы в КАЖДОМ
+			# следующем сравнении — одна правка расписания навсегда сделала
+			# бы все дальнейшие применения дорогими.
+			mv "$RECORDS.next" "$RECORDS"
+			logger -t trusttunnel "settings applied: nothing to do for these keys"
+			;;
+		reload)
+			# Свой снимок здесь не нужен: regenerate выгружает UCI сам и
+			# сам переносит запись по успеху.
+			rm -f "$RECORDS.next"
+			if regenerate && "$LIBDIR/routing" up "$RECORDS" "$OUTDIR"; then
+				# reattach именно ЗДЕСЬ, а не в надежде на hotplug: событие
+				# add не придёт — устройство клиента никуда не исчезало.
+				# Сам маршрут при этом обычно выживает, потому что do_up
+				# делает route replace, а не flush, но полагаться на это
+				# молча не стоит: вызов идемпотентен и стоит одну команду.
+				"$LIBDIR/routing" reattach "$RECORDS" "$OUTDIR"
+				logger -t trusttunnel "settings applied without restarting the client"
+			else
+				logger -t trusttunnel "warning: applying without a restart failed, restarting the service"
+				restart
+				return $?
+			fi
+			;;
+		restart)
+			rm -f "$RECORDS.next"
+			# Маршрутизация переживает цикл stop+start: diff доказал, что
+			# ни номер таблицы, ни отметка не менялись, а значит правила,
+			# которые start_service загрузит заново, будут теми же. Пока
+			# клиент поднимается, помеченный трафик держит blackhole вместо
+			# того чтобы утекать напрямую.
+			_TT_KEEP_ROUTING=1
+			restart
+			;;
+		*)
+			rm -f "$RECORDS.next"
+			restart
+			;;
+	esac
+}
+
+reload_service() {
+	apply_settings
+}
+
+service_triggers() {
+	procd_add_reload_trigger "trusttunnel"
+	procd_add_interface_trigger "interface.*.up" wan /etc/init.d/trusttunnel restart
+}
+

@@ -1,12 +1,12 @@
 #!/bin/sh
 . "$(dirname "$0")/lib.sh"
 
-GEN=packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
+GEN=packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config
 MIN=tests/fixtures/records/minimal.tsv
 FULL=tests/fixtures/records/full.tsv
 
 out_min="$(sh "$GEN" "$MIN")"
-out_full="$(sh "$GEN" "$FULL" tests/fixtures/exclusions-extra.txt)"
+out_full="$(sh "$GEN" "$FULL")"
 
 # Значения, обязательные для роутера и не настраиваемые пользователем.
 assert_contains "$out_min" 'vpn_mode = "general"' "vpn_mode is always general"
@@ -46,20 +46,20 @@ assert_contains "$out_full" 'mtu_size = 1400' "mtu from config"
 assert_contains "$out_full" 'dns_upstreams = ["tls://1.1.1.1", "quic://dns.adguard.com:8853"]' "dns upstreams array"
 assert_contains "$out_full" 'password = "pa\"ss\\with"' "escapes quotes and backslashes"
 
-assert_contains "$out_full" 'exclusions = ["bank.example", "*.local.example", "listed-one.example", "listed-two.example"]' \
-	"direct domains plus extra exclusions"
+assert_contains "$out_full" 'exclusions = ["bank.example", "*.local.example"]' \
+	"direct domains become client exclusions"
 
-# Сертификат приходит третьим аргументом как файл, а не через records:
+# Сертификат приходит вторым аргументом как файл, а не через records:
 # в records значение не может содержать перевод строки, а PEM многострочный.
 printf -- '-----BEGIN CERTIFICATE-----\nMIIBdummy\n-----END CERTIFICATE-----\n' \
 	> "$TT_TEST_TMP/cert.pem"
-out_cert="$(sh "$GEN" "$MIN" "" "$TT_TEST_TMP/cert.pem")"
+out_cert="$(sh "$GEN" "$MIN" "$TT_TEST_TMP/cert.pem")"
 assert_contains "$out_cert" "certificate = '''" "emits a multi-line literal for a PEM"
 assert_contains "$out_cert" "-----END CERTIFICATE-----" "PEM body is copied verbatim"
 assert_contains "$out_min" 'certificate = ""' "empty certificate when no PEM file is given"
 
 # Валидация обязательных полей.
-printf 'main.mode\tselective\n' > "$TT_TEST_TMP/bare.tsv"
+printf 'main.enabled\t1\n' > "$TT_TEST_TMP/bare.tsv"
 assert_exit 1 "fails without endpoint credentials" sh "$GEN" "$TT_TEST_TMP/bare.tsv"
 
 tt_test_summary

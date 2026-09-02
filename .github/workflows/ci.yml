@@ -27,17 +27,12 @@ jobs:
       # отдельно: она ловит причину в индексе, а не последствие в сборке.
       - name: Executable bits
         run: |
-          need="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
-          packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
-          packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/canon-subnets
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/fetch-lists
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-lists
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/normalize
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/warm-sets
+          need="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
+          packages/luci-app-trusttunnel-lite/root/etc/uci-defaults/40-luci-trusttunnel
+          packages/luci-app-trusttunnel-lite/root/etc/hotplug.d/net/40-trusttunnel
+          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config
+          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing
+          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export
           install.sh"
           fail=0
           for f in $need; do
@@ -66,19 +61,14 @@ jobs:
           docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh \
             install.sh \
             tests/run.sh \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/normalize \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/canon-subnets \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-lists \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/fetch-lists \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export \
-            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/warm-sets \
-            packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
+            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/records.sh \
+            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config \
+            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing \
+            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export \
+            packages/luci-app-trusttunnel-lite/root/etc/uci-defaults/40-luci-trusttunnel
 
       - name: Shell syntax of the init script
-        run: sh -n packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
+        run: sh -n packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
 
       # Проверка синтаксиса ucode (`uc -c` в release.yml) НЕ ловит отсутствующий
       # импорт: обращение к необъявленной функции — ошибка времени выполнения, а
@@ -88,7 +78,7 @@ jobs:
       # списком тех, что живут в модулях, а не в ядре ucode.
       - name: ucode module imports
         run: |
-          f=packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
+          f=packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
           # Функции, которых НЕТ в ядре ucode: каждая требует import из модуля.
           # Список намеренно короткий — только то, что реально может понадобиться
           # этому бэкенду; расширять по мере надобности.
@@ -144,7 +134,7 @@ jobs:
           cmake --build /tmp/ucode/build -j"$(nproc)"
           uc=/tmp/ucode/build/ucode
           "$uc" -L '/tmp/ucode/build/*.so' -c \
-            packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
+            packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
 
           # Контроль самой проверки: компилятор, принимающий заведомо битый
           # файл, не проверяет ничего, а зелёный шаг при этом обманывает.
@@ -175,7 +165,7 @@ jobs:
           # кавычках вызовов не содержат, поэтому этого признака достаточно.
           mods="ui dom rpc uci form view poll fs network validation"
           fail=0
-          for f in packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js; do
+          for f in packages/luci-app-trusttunnel-lite/htdocs/luci-static/resources/view/trusttunnel/*.js; do
             for m in $mods; do
               grep -qE "(^|[^A-Za-z0-9_.$])${m}\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(" "$f" || continue
               grep -qE "^'require ${m}'" "$f" && continue
@@ -209,4 +199,4 @@ jobs:
               }
             }
             if (failed) process.exit(1);
-          ' packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js
+          ' packages/luci-app-trusttunnel-lite/htdocs/luci-static/resources/view/trusttunnel/*.js

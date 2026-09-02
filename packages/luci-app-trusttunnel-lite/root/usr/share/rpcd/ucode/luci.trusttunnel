@@ -1,0 +1,658 @@
+'use strict';
+
+import { popen, readfile, writefile, access, unlink, stat, mkdir, chmod } from 'fs';
+// rand/srand живут в модуле math, а НЕ в ядре ucode: без этого импорта
+// tmp_path() выбрасывает "left-hand side is not a function", и вместе с ним
+// ломаются импорт конфига и проверка домена. Модуль объявлен в LUCI_DEPENDS
+// как +ucode-mod-math — полагаться на то, что его притянет кто-то другой,
+// нельзя: на минимальной сборке его не будет, и упадёт ВЕСЬ бэкенд, а не
+// одна функция.
+import { rand, srand } from 'math';
+
+srand(time());
+
+const LIBDIR = '/usr/libexec/trusttunnel';
+const OUTDIR = '/var/etc/trusttunnel';
+const RECORDS = OUTDIR + '/settings.tsv';
+const CLIENT = '/opt/trusttunnel_client/trusttunnel_client';
+// Проверка обновлений идёт к релизам НАШЕГО репозитория и кэшируется на диск:
+// у GitHub 60 неавторизованных запросов в час на адрес, а страница состояния
+// опрашивается каждые 10 секунд. Без кэша один открытый браузер исчерпал бы
+// лимит за десять минут.
+const RELEASE_URL = 'https://api.github.com/repos/i-zhirov/luci-app-trusttunnel-lite/releases/latest';
+const VERSION_CACHE = '/var/cache/trusttunnel/release.json';
+// Шесть часов — четыре запроса в сутки на роутер, то есть исчезающая доля от
+// 60 неавторизованных запросов в час, которыми ограничивает GitHub.
+const RELEASE_TTL = 21600;
+
+// sh() склеивает stderr в stdout: нужно там, где текст ошибки сам является
+// результатом (управление службой, лог, импорт).
+function sh(cmd) {
+	let p = popen(cmd + ' 2>&1');
+	if (!p)
+		return { code: -1, out: '' };
+	let out = p.read('all') ?? '';
+	let code = p.close();
+	return { code: code, out: out };
+}
+
+// sh_out() отдаёт только stdout. Обязателен там, где вывод разбирается:
+// normalize пишет "dropped N" в stderr, nft и nslookup тоже могут писать
+// предупреждения, и склейка потоков превратила бы их в данные.
+function sh_out(cmd) {
+	let p = popen(cmd + ' 2>/dev/null');
+	if (!p)
+		return { code: -1, out: '' };
+	let out = p.read('all') ?? '';
+	let code = p.close();
+	return { code: code, out: out };
+}
+
+function shq(s) {
+	// Одинарные кавычки в оболочке: закрыть, вставить экранированную, открыть.
+	return "'" + replace('' + s, "'", "'\\''") + "'";
+}
+
+// Непредсказуемое имя во временном каталоге плюс mode 600 сразу после
+// записи. Эти файлы пишутся от root в /tmp — каталоге с правами на запись
+// для всех — и как минимум один из вызывающих (import_config) кладёт туда
+// пароль endpoint в открытом виде. Фиксированное имя плюс права по умолчанию
+// делали файл читаемым (и заменяемым по предсказуемому пути) для любого
+// локального непривилегированного процесса в окне между записью и чтением.
+function tmp_path(prefix) {
+	return sprintf('/tmp/.tt-%s-%08x%04x', prefix, time(), rand() % 65536);
+}
+
+// writefile() + chmod(0600) в одном месте: чтобы никто из вызывающих не мог
+// забыть про права после создания файла с секретом внутри.
+function write_secret_tmp(prefix, data) {
+	let path = tmp_path(prefix);
+	writefile(path, data);
+	chmod(path, 0600);
+	return path;
+}
+
+// Сравнение версий по числовым компонентам. Строковое сравнение здесь неверно:
+// "1.0.10" лексикографически меньше "1.0.9", то есть обновление молча не
+// предлагалось бы на каждом десятом выпуске. Ведущая "v" тега и суффикс "-rN"
+// пакетной версии отбрасываются: они не участвуют в сравнении выпусков.
+// Возврат: >0 если a новее b, <0 если старее, 0 если равны или не разобрать.
+function vercmp(a, b) {
+	function parts(s) {
+		s = replace('' + s, /^[vV]/, '');
+		s = replace(s, /-.*$/, '');
+		let out = [];
+		for (let p in split(s, '.')) {
+			let n = match(p, /^([0-9]+)/);
+			push(out, n ? +n[1] : 0);
+		}
+		return out;
+	}
+	let pa = parts(a), pb = parts(b);
+	let n = length(pa) > length(pb) ? length(pa) : length(pb);
+	for (let i = 0; i < n; i++) {
+		let x = i < length(pa) ? pa[i] : 0;
+		let y = i < length(pb) ? pb[i] : 0;
+		if (x != y) return x > y ? 1 : -1;
+	}
+	return 0;
+}
+
+function records() {
+	let raw = readfile(RECORDS) ?? '';
+	let map = {};
+	for (let line in split(raw, '\n')) {
+		let i = index(line, '\t');
+		if (i < 1) continue;
+		let k = substr(line, 0, i), v = substr(line, i + 1);
+		if (!map[k]) map[k] = [];
+		push(map[k], v);
+	}
+	return map;
+}
+
+function first(map, key, dflt) {
+	return (map[key] && length(map[key])) ? map[key][0] : dflt;
+}
+
+function uciget(path) {
+	let r = sh('uci -q get ' + shq(path));
+	return trim(r.out);
+}
+
+function routing_status() {
+	// device: имя устройства, которое создал КЛИЕНТ, или null. Своего
+	// устройства у пакета больше нет, поэтому имя из настроек здесь не
+	// участвует — интерфейс обязан показывать то, что есть в системе, а не то,
+	// что записано в конфиге.
+	let out = { device_up: false, rule: false, table: false, nft: false, device: null };
+	if (!access(RECORDS)) return out;
+	// sh_out, а не sh: вывод разбирается по точным строкам, поэтому stderr
+	// в нём не нужен даже если сейчас routing status его и не печатает.
+	let r = sh_out(LIBDIR + '/routing status ' + shq(RECORDS) + ' ' + shq(OUTDIR));
+	for (let line in split(r.out, '\n')) {
+		if (line == 'device up') out.device_up = true;
+		if (line == 'rule present') out.rule = true;
+		if (line == 'table present') out.table = true;
+		if (line == 'nft present') out.nft = true;
+		let m = match(line, /^client device (.+)$/);
+		if (m) out.device = m[1];
+	}
+	return out;
+}
+
+function parse_ping(host, out) {
+	let res = { host: host, sent: 0, received: 0, loss: 100, min: null, avg: null, max: null };
+	for (let line in split(out, '\n')) {
+		let m = match(line, /([0-9]+) packets transmitted, ([0-9]+) packets received/);
+		if (m) {
+			res.sent = +m[1];
+			res.received = +m[2];
+			res.loss = res.sent ? int((res.sent - res.received) * 100 / res.sent) : 100;
+		}
+		m = match(line, /min\/avg\/max *= *([0-9.]+)\/([0-9.]+)\/([0-9.]+)/);
+		if (m) {
+			res.min = +m[1]; res.avg = +m[2]; res.max = +m[3];
+		}
+	}
+	return res;
+}
+
+function endpoint_host(addr) {
+	let m = match(addr, /^\[(.+)\]:[0-9]+$/);
+	if (m) return m[1];
+	if (length(split(addr, ':')) > 2) return addr;
+	m = match(addr, /^(.+):[0-9]+$/);
+	return m ? m[1] : addr;
+}
+
+return {
+	'luci.trusttunnel': {
+
+	status: {
+		args: {},
+		call: function() {
+			let rec = records();
+			let rs = routing_status();
+			let running = sh('/etc/init.d/trusttunnel running').code == 0;
+			// Устройство берётся из ЖИВОГО состояния, а не из настроек: его создаёт
+			// клиент и имя выбирает сам. null означает "клиент устройства пока не
+			// создал" — и это честнее, чем показывать имя из конфига, которого в
+			// системе нет.
+			let dev = rs.device;
+			return {
+				enabled: uciget('trusttunnel.main.enabled') == '1',
+				running: running,
+				device: dev,
+				device_up: rs.device_up,
+				rule: rs.rule,
+				table: rs.table,
+				nft: rs.nft,
+				endpoint_hostname: first(rec, 'endpoint.hostname', ''),
+				addresses: rec['endpoint.address'] ?? [],
+				client_installed: access(CLIENT) ? true : false
+			};
+		}
+	},
+
+	service: {
+		args: { action: 'restart' },
+		call: function(req) {
+			let a = req.args?.action ?? 'restart';
+			if (!(a in [ 'start', 'stop', 'restart', 'reload' ]))
+				return { error: 'unsupported action' };
+			let r = sh('/etc/init.d/trusttunnel ' + a);
+			// procd's `start` verb does not propagate start_service()'s exit
+			// status — that belongs to rc.common's generic start(), not to
+			// this init script, so it is not ours to change. Every
+			// precondition start_service checks (disabled in configuration,
+			// missing client binary, trust store setup, config generation,
+			// routing setup) logs a specific reason and returns non-zero,
+			// but `start` itself still reports 0. Without this check the
+			// interface would say the action succeeded while nothing is
+			// running.
+			//
+			// `running` is the same mechanism status() uses to report
+			// whether the service is up, so this asks procd directly rather
+			// than trusting the wrapper's exit code.
+			if (a == 'start') {
+				// A precondition failure returns from start_service before
+				// procd_open_instance ever runs, so `running` already
+				// reflects it immediately. A successful start still needs a
+				// brief moment for procd to actually fork and exec the
+				// client after procd_close_instance hands the instance off
+				// — this sleep is only to cover that handoff, not to wait
+				// out anything of ours.
+				sh('sleep 1');
+				if (sh('/etc/init.d/trusttunnel running').code != 0)
+					return { code: 1, output: r.out, not_running: true };
+			}
+			return { code: r.code, output: r.out };
+		}
+	},
+
+	ping: {
+		args: { target: '' },
+		call: function(req) {
+			let targets = [];
+			let t = trim(req.args?.target ?? '');
+			if (length(t)) {
+				push(targets, t);
+			} else {
+				let rec = records();
+				for (let a in (rec['endpoint.address'] ?? []))
+					push(targets, endpoint_host(a));
+			}
+			if (!length(targets))
+				return { error: 'no endpoint address configured' };
+
+			let results = [];
+			for (let host in targets) {
+				let r = sh('ping -c 4 -W 2 -q ' + shq(host));
+				push(results, parse_ping(host, r.out));
+			}
+			return { results: results };
+		}
+	},
+
+	probe: {
+		args: {},
+		call: function() {
+			// Устройство берётся из живого состояния: своего у нас нет, а имя из
+			// настроек указывало бы в никуда.
+			let dev = routing_status().device;
+			if (dev == null)
+				return {
+					tunnel: { error: 'the client has not created a tunnel device yet' },
+					direct: { error: 'not attempted' }
+				};
+			let url = 'https://api.ipify.org';
+			// Здесь stderr нужен как текст ошибки, поэтому sh(), а не sh_out().
+			let via = sh('curl -fsS --max-time 8 --interface ' + shq(dev) + ' ' + shq(url));
+			let direct = sh('curl -fsS --max-time 8 ' + shq(url));
+			return {
+				tunnel: via.code == 0 ? { ip: trim(via.out) } : { error: trim(via.out) || 'request failed' },
+				direct: direct.code == 0 ? { ip: trim(direct.out) } : { error: trim(direct.out) || 'request failed' }
+			};
+		}
+	},
+
+	check_domain: {
+		args: { domain: '' },
+		call: function(req) {
+			let raw = trim(req.args?.domain ?? '');
+			if (!length(raw))
+				return { error: 'domain is required' };
+			let rec = records();
+			let is_direct = false;
+			for (let d in (rec['domains.direct'] ?? [])) {
+				if (lc(trim(d)) == lc(raw) || substr(lc(raw), -(length(trim(d)) + 1)) == '.' + lc(trim(d)))
+					is_direct = true;
+			}
+			return {
+				domain: raw, normalized: lc(raw),
+				verdict: is_direct ? 'direct' : 'tunnel',
+				reason: is_direct
+					? 'listed in the "do not bypass" list; the client sends it out by SNI'
+					: 'all LAN traffic goes through the tunnel (full-tunnel mode)'
+			};
+		}
+	},
+
+	log: {
+		args: { lines: 100 },
+		call: function(req) {
+			let n = req.args?.lines ?? 100;
+			let r = sh('logread -e trusttunnel | tail -n ' + int(n));
+			return { lines: split(trim(r.out), '\n') };
+		}
+	},
+
+	// Версии установленного и доступного. Метод вызывается ОДИН раз при
+	// отрисовке страницы, а не из опроса состояния: сетевая часть здесь
+	// кэшируется, но даже кэшированный вызов незачем делать каждые 10 секунд.
+	// Диагностика: один вызов прогоняет всю цепочку от настроек до трафика и
+	// возвращает плоский список проверок. Вызывается ТОЛЬКО по кнопке — часть
+	// проверок ходит в сеть и занимает секунды, в опросе состояния им не место.
+	//
+	// Каждая проверка несёт не только вердикт, но и подсказку: список, где
+	// написано "нет" без объяснения что делать, заставляет пользователя гадать,
+	// а именно от этого раздел и должен избавить.
+	diagnose: {
+		args: {},
+		call: function() {
+			let rec = records();
+			let rs = routing_status();
+			let checks = [];
+			// Устройство клиента, а не имя из настроек: своего устройства у пакета
+			// нет. null означает, что клиент его ещё не создал.
+			let dev = rs.device;
+			let enabled = uciget('trusttunnel.main.enabled') == '1';
+			let running = sh('/etc/init.d/trusttunnel running').code == 0;
+
+			function add(group, label, status, detail, hint) {
+				push(checks, {
+					group: group, label: label, status: status,
+					detail: detail ?? '', hint: hint ?? ''
+				});
+			}
+
+			// --- Настройка ---
+			let addrs = rec['endpoint.address'] ?? [];
+			add('config', 'Endpoint address', length(addrs) ? 'ok' : 'fail',
+				length(addrs) ? join(', ', addrs) : 'not set',
+				length(addrs) ? '' : 'Fill in the address on the Settings page, or import the server config.');
+
+			let user = first(rec, 'endpoint.username', '');
+			let pass = first(rec, 'endpoint.password', '');
+			add('config', 'Credentials', (length(user) && length(pass)) ? 'ok' : 'fail',
+				length(user) ? 'user ' + user : 'not set',
+				(length(user) && length(pass)) ? '' : 'Both the user name and the password are required.');
+
+			let host = first(rec, 'endpoint.hostname', '');
+			add('config', 'TLS host name', length(host) ? 'ok' : 'warn',
+				length(host) ? host : 'not set',
+				length(host) ? '' : 'Without it the TLS session uses the bare address, which many servers reject.');
+
+			// --- Предпосылки ---
+			let cl = access(CLIENT);
+			let clver = '';
+			if (cl) {
+				let r = sh_out(shq(CLIENT) + ' --version');
+				let m = match(trim(r.out), /([0-9]+\.[0-9]+\.[0-9]+[^ \t\n]*)/);
+				clver = m ? m[1] : 'installed';
+			}
+			add('prereq', 'TrustTunnel client', cl ? 'ok' : 'fail',
+				cl ? clver : 'not installed',
+				cl ? '' : 'Run install.sh — the package does not ship the client binary.');
+
+			let tun = access('/dev/net/tun');
+			add('prereq', 'tun device', tun ? 'ok' : 'fail',
+				tun ? '/dev/net/tun present' : 'missing',
+				tun ? '' : 'Install kmod-tun.');
+
+			// --- Служба ---
+			add('service', 'Enabled', enabled ? 'ok' : 'warn',
+				enabled ? 'yes' : 'no',
+				enabled ? '' : 'Turn on Enable on the Settings page, then press Start.');
+			add('service', 'Running', running ? 'ok' : (enabled ? 'fail' : 'skip'),
+				running ? 'yes' : 'no',
+				running ? '' : (enabled ? 'Press Start and read the client log below.' : ''));
+
+			// --- Ядро ---
+			// Состояние ядра судится по тому, БЫЛА ЛИ применена конфигурация
+			// (есть settings.tsv), а не по тому, работает ли клиент. Иначе
+			// получалась несогласованность: при упавшем клиенте правило и
+			// таблицы показывались «в порядке», а устройство — «пропущено»,
+			// хотя создаёт их один и тот же routing up.
+			let applied = access(RECORDS) ? true : false;
+			let want_mtu = first(rec, 'network.mtu', '1350');
+			let dev_exists = (dev != null) && access('/sys/class/net/' + dev) ? true : false;
+			let mtu_now = dev_exists
+				? trim(sh_out('cat /sys/class/net/' + shq(dev) + '/mtu').out) : '';
+
+			// Устройство создаёт КЛИЕНТ, а мы к нему привязываем маршрут. Поэтому
+			// «устройства нет» — это не отказ маршрутизации, а отказ клиента, и
+			// подсказка должна вести в его журнал, а не в настройки сети.
+			add('kernel', 'Tunnel device', dev_exists ? 'ok' : (running ? 'fail' : 'skip'),
+				dev_exists ? dev + ', MTU ' + (length(mtu_now) ? mtu_now : '?')
+				           : 'the client has not created one',
+				dev_exists ? '' : 'The device belongs to the client, not to this package. Read the client log below.');
+
+			// MTU задаётся клиенту через mtu_size в его конфиге, а не выставляется
+			// нами на устройстве: устройство не наше. Расхождение означает, что
+			// клиент работает со старым конфигом.
+			if (dev_exists && length(mtu_now) && mtu_now != want_mtu)
+				add('kernel', 'MTU matches settings', 'warn',
+					'device ' + mtu_now + ', configured ' + want_mtu,
+					'Restart the service so the client picks up the configured value.');
+
+			// Привязка маршрута — отдельная от существования устройства вещь:
+			// устройство может быть, а маршрута в таблице не быть, и тогда
+			// помеченный трафик уходит в blackhole.
+			if (dev_exists) {
+				let attached = index(sh_out('ip route show table ' +
+					shq(first(rec, 'network.table', '880'))).out, 'dev ' + dev) >= 0;
+				add('kernel', 'Route attached to the device', attached ? 'ok' : 'fail',
+					attached ? 'default via ' + dev : 'not attached',
+					attached ? '' : 'Marked traffic falls into the killswitch instead of the tunnel. Restart the service.');
+
+				let carrier = trim(sh_out('cat /sys/class/net/' + shq(dev) + '/carrier').out);
+				add('kernel', 'Tunnel carrier', carrier == '1' ? 'ok' : 'warn',
+					carrier == '1' ? 'up' : 'no carrier',
+					carrier == '1' ? '' : 'The device exists but the client has not established the tunnel yet. This is the client side, not the routing — read the client log.');
+			}
+
+			add('kernel', 'Routing rule', rs.rule ? 'ok' : (applied ? 'fail' : 'skip'),
+				rs.rule ? 'present' : 'absent', '');
+			add('kernel', 'Routing table', rs.table ? 'ok' : (applied ? 'fail' : 'skip'),
+				rs.table ? 'present' : 'absent', '');
+			add('kernel', 'nftables table', rs.nft ? 'ok' : (applied ? 'fail' : 'skip'),
+				rs.nft ? 'present' : 'absent', '');
+
+			let fw = sh_out('nft list ruleset');
+			let fwz = index(fw.out, 'trusttunnel') >= 0;
+			add('kernel', 'Firewall zone', fwz ? 'ok' : 'warn',
+				fwz ? 'loaded in fw4' : 'not in the live ruleset',
+				fwz ? '' : 'Run /etc/init.d/firewall reload — traffic into the tunnel is dropped without the zone.');
+
+			// --- Сеть ---
+			if (length(addrs)) {
+				let h = endpoint_host(addrs[0]);
+				let p = sh_out('ping -c 2 -W 2 ' + shq(h));
+				let pr = parse_ping(h, p.out);
+				add('network', 'Endpoint reachable', pr.received > 0 ? 'ok' : 'fail',
+					pr.received > 0 ? pr.avg + ' ms average' : 'no reply from ' + h,
+					pr.received > 0 ? '' : 'Check the address, and that the router itself has internet access.');
+			}
+
+			if (running && rs.device_up) {
+				let url = 'https://api.ipify.org';
+				let via = sh('curl -fsS --max-time 8 --interface ' + shq(dev) + ' ' + shq(url));
+				let direct = sh('curl -fsS --max-time 8 ' + shq(url));
+				if (via.code == 0 && direct.code == 0) {
+					let same = trim(via.out) == trim(direct.out);
+					add('network', 'Traffic goes through the tunnel', same ? 'fail' : 'ok',
+						same ? 'same address both ways: ' + trim(direct.out)
+						     : 'tunnel ' + trim(via.out) + ', direct ' + trim(direct.out),
+						same ? 'The tunnel is up but traffic is not using it.' : '');
+				} else if (direct.code == 0) {
+					add('network', 'Traffic goes through the tunnel', 'warn',
+						'could not query through ' + dev + ', direct ' + trim(direct.out),
+						'A request bound to the device can fail even on a healthy tunnel, because the default route lives in the marked table. Judge by a LAN client instead.');
+				} else {
+					add('network', 'Traffic goes through the tunnel', 'skip',
+						'the router itself has no internet access', '');
+				}
+			}
+
+			let n = { ok: 0, warn: 0, fail: 0, skip: 0 };
+			for (let c in checks) n[c.status] = n[c.status] + 1;
+			return {
+				checks: checks, counts: n,
+				verdict: n.fail ? 'fail' : (n.warn ? 'warn' : 'ok')
+			};
+		}
+	},
+
+	versions: {
+		args: { refresh: false },
+		call: function(req) {
+			let out = {
+				client: null, package: null, latest: null,
+				update_available: false, checked_at: null, stale: false,
+				ahead: false
+			};
+
+			// Клиент печатает "trusttunnel_client 1.0.49".
+			if (access(CLIENT)) {
+				let r = sh_out(shq(CLIENT) + ' --version');
+				let m = match(trim(r.out), /([0-9]+\.[0-9]+\.[0-9]+[^ \t\n]*)/);
+				if (m) out.client = m[1];
+			}
+
+			// apk печатает "luci-app-trusttunnel-lite-1.0.0-r1 noarch {...} [installed]".
+			// Версия берётся из имени пакета, поэтому шаблон захватывает всё
+			// между именем и первым пробелом, включая суффикс -rN.
+			let rp = sh_out('apk list -I luci-app-trusttunnel-lite');
+			let mp = match(trim(rp.out), /luci-app-trusttunnel-lite-([^ \t\n]+)/);
+			if (mp) out.package = mp[1];
+
+			// Сетевая часть: последний релиз нашего репозитория, с кэшем на
+			// диске. При недоступности GitHub отдаём кэш с пометкой stale, а
+			// не ошибку — знать свою версию полезно и без сети.
+			let st = stat(VERSION_CACHE);
+			let now = time();
+			let fresh = st && (now - st.mtime) < RELEASE_TTL;
+			let refresh = req.args?.refresh ?? false;
+			let tag = null;
+
+			if (!refresh && fresh) {
+				try {
+					let c = json(readfile(VERSION_CACHE) ?? '{}');
+					tag = c.tag;
+					out.checked_at = c.checked_at;
+				} catch (e) { }
+
+				// Кэш, в котором «последний релиз» СТАРШЕ установленного
+				// пакета, описывает состояние, которого не бывает: обновиться
+				// до версии, которой ещё нет в релизах, обычному роутеру
+				// неоткуда. Значит кэш отстал, и держаться за него нельзя —
+				// иначе страница пишет «актуальная версия» ровно тому, кто
+				// отстал на несколько выпусков. Ровно так и вышло на живом
+				// роутере: кэш с v1.0.6 при установленном 1.0.8-r1 прятал
+				// вышедший 1.0.9. Обнуляем tag и идём в сеть, не дожидаясь TTL.
+				if (tag != null && out.package != null &&
+				    vercmp(tag, out.package) < 0) {
+					tag = null;
+					out.checked_at = null;
+				}
+			}
+
+			if (tag == null) {
+				let rr = sh_out('curl -fsS --max-time 15 ' + shq(RELEASE_URL));
+				if (rr.code == 0) {
+					try {
+						tag = json(rr.out)?.tag_name;
+					} catch (e) { }
+					if (tag != null) {
+						out.checked_at = now;
+						mkdir('/var/cache');
+						mkdir('/var/cache/trusttunnel');
+						if (!writefile(VERSION_CACHE,
+						               sprintf('%J', { tag: tag, checked_at: now })))
+							sh('logger -t trusttunnel ' + shq(
+								'error: could not write release cache to ' + VERSION_CACHE));
+					}
+				} else if (st) {
+					try {
+						let c = json(readfile(VERSION_CACHE) ?? '{}');
+						tag = c.tag;
+						out.checked_at = c.checked_at;
+						out.stale = true;
+					} catch (e) { }
+				}
+			}
+
+			out.latest = tag;
+			if (tag != null && out.package != null) {
+				let c = vercmp(tag, out.package);
+				out.update_available = c > 0;
+				// Установленное новее последнего релиза бывает у сборки из
+				// main (артефакт CI) — и у отставшего кэша, который не удалось
+				// обновить, потому что GitHub недоступен. В обоих случаях
+				// «актуальная версия» — неверный ответ: в первом он верен лишь
+				// случайно, во втором просто ложен. Признак отдаётся отдельно,
+				// чтобы интерфейс сказал, что видит на самом деле.
+				out.ahead = c < 0;
+			}
+			return out;
+		}
+	},
+
+	import_config: {
+		args: { text: '' },
+		call: function(req) {
+			let text = req.args?.text ?? '';
+			if (!length(trim(text)))
+				return { error: 'configuration text is empty' };
+
+			// Оба файла несут учётные данные endpoint (в т.ч. пароль) в
+			// открытом виде: имена непредсказуемые, а не фиксированные, и
+			// права 0600, а не то что дал умолчальный umask. inp пишем сами
+			// через write_secret_tmp(); outp создаёт setup_wizard, поэтому
+			// права на него доводим chmod'ом сразу после вызова, до чтения.
+			let outp = tmp_path('import-out');
+			let wiz = '/opt/trusttunnel_client/setup_wizard';
+			if (!access(wiz))
+				return { error: 'setup_wizard is not installed; run install.sh' };
+
+			// Сервер выдаёт конфигурацию в ДВУХ видах, и setup_wizard принимает
+			// их РАЗНЫМИ, взаимоисключающими флагами: файл конфига через
+			// --endpoint_config, ссылку tt:// через --deeplink. Если скормить
+			// ссылку как файл, вендор падает с "TOML parse error at line 1",
+			// файла настроек не создаёт, и импорт молча ничего не заполняет.
+			let trimmed = trim(text);
+			let inp = null;
+			let cmd;
+			if (wildcard(trimmed, 'tt://*')) {
+				// Ссылка идёт аргументом, а не файлом; shq() обязателен —
+				// в ней встречаются символы, значимые для оболочки.
+				cmd = wiz + ' --mode non-interactive --deeplink ' + shq(trimmed) +
+					' --settings ' + shq(outp);
+			} else {
+				inp = write_secret_tmp('import-in', text);
+				cmd = wiz + ' --mode non-interactive --endpoint_config ' + shq(inp) +
+					' --settings ' + shq(outp);
+			}
+			let r = sh(cmd);
+			chmod(outp, 0600);
+			let produced = readfile(outp) ?? '';
+			if (inp) unlink(inp);
+			unlink(outp);
+			if (r.code != 0 || !length(produced)) {
+				// setup_wizard сообщает об ошибках дампом паники Rust. Целиком
+				// его показывать незачем: строка "thread ... panicked at" и
+				// совет про RUST_BACKTRACE ничего не говорят администратору
+				// роутера, а суть лежит между ними. Оставляем содержательное.
+				let msg = [];
+				for (let line in split(r.out, "\n")) {
+					line = trim(line);
+					if (!length(line) || wildcard(line, "thread *panicked at*") ||
+					    wildcard(line, "note: *") || wildcard(line, "Aborted*"))
+						continue;
+					push(msg, line);
+				}
+				return { error: length(msg) ? join(" ", msg) : "setup_wizard failed" };
+			}
+
+			let res = { addresses: [] };
+			for (let line in split(produced, '\n')) {
+				let m = match(line, /^ *hostname *= *"(.*)"/);
+				if (m) { res.hostname = m[1]; continue; }
+				m = match(line, /^ *username *= *"(.*)"/);
+				if (m) { res.username = m[1]; continue; }
+				m = match(line, /^ *password *= *"(.*)"/);
+				if (m) { res.password = m[1]; continue; }
+				m = match(line, /^ *certificate *= *"(.*)"/);
+				if (m) { res.certificate = m[1]; continue; }
+				m = match(line, /^ *addresses *= *\[(.*)\]/);
+				if (m) {
+					for (let a in split(m[1], ','))
+						push(res.addresses, replace(trim(a), /"/g, ''));
+				}
+			}
+			// Если setup_wizard отработал, но НИ ОДНОГО поля распознать не
+			// удалось, это отказ, а не успех. Молчаливое "импортировано" с
+			// пустыми полями — худший из возможных ответов: пользователь видит
+			// перезагрузку страницы и делает вывод, что сломан импорт целиком.
+			if (!res.hostname && !res.username && !res.password &&
+			    !res.certificate && !length(res.addresses))
+				return { error: 'setup_wizard produced no recognisable endpoint fields' };
+
+			return res;
+		}
+	}
+
+	}
+};

@@ -2,7 +2,7 @@
 # Выбор минимального действия при применении настроек.
 #
 # ЗАЧЕМ. Save & Apply приходит в reload_service, а тот раньше всегда звал
-# restart: любая правка — хоть одна галочка в списке доменов — убивала клиента
+# restart: любая правка — хоть одна строка в domains.direct — убивала клиента
 # и рвала туннель на несколько секунд. Между stop и start при этом исчезала и
 # nft-таблица, так что помеченный трафик LAN успевал уйти НАПРЯМУЮ. Оба
 # следствия не нужны: клиент читает client.toml только при запуске, поэтому
@@ -16,8 +16,8 @@
 # самое дешёвое, и на это здесь есть отдельная проверка.
 . "$(dirname "$0")/lib.sh"
 
-INIT="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel"
-UCI_EXPORT="packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export"
+INIT="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel"
+UCI_EXPORT="packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export"
 
 sandbox="$TT_TEST_TMP/sandbox"
 mkdir -p "$sandbox"
@@ -34,29 +34,28 @@ new="$sandbox/new.tsv"
 
 cat > "$old" <<'EOF'
 main.enabled	1
-main.mode	selective
 endpoint.hostname	a.example
-lists.source	Russia/inside-dnsmasq-nfset.lst
-lists.source	Services/youtube.lst
+domains.direct	bank.example
 EOF
 
 # Отсутствие изменений проверяется через classify_change ниже: пустой вывод
 # changed_keys неотличим от невызванной функции, и такой ассерт зелен даже
 # когда реализации нет вовсе.
 #
-# Добавленный элемент списка. Ключ в records повторяется, поэтому сравнение
-# обязано считать вхождения, а не искать ключ: при простом сравнении множеств
-# строк добавление второго значения к уже существующему ключу потерялось бы.
+# Добавленный элемент списка исключений. Ключ в records повторяется, поэтому
+# сравнение обязано считать вхождения, а не искать ключ: при простом сравнении
+# множеств строк добавление второго значения к уже существующему ключу
+# потерялось бы.
 cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
-assert_eq "lists.source" "$(changed_keys "$old" "$new")" \
+printf 'domains.direct\tbank2.example\n' >> "$new"
+assert_eq "domains.direct" "$(changed_keys "$old" "$new")" \
 	"добавленный элемент списка виден"
 
 # Удалённый элемент. Направление diff'а симметрично: пропажу надо замечать
 # так же, как появление, иначе снятая галочка не применялась бы.
 cp "$old" "$new"
-grep -v 'Services/youtube.lst' "$old" > "$new"
-assert_eq "lists.source" "$(changed_keys "$old" "$new")" \
+grep -v 'bank.example' "$old" > "$new"
+assert_eq "domains.direct" "$(changed_keys "$old" "$new")" \
 	"удалённый элемент списка виден"
 
 cp "$old" "$new"
@@ -73,64 +72,40 @@ assert_eq "endpoint.hostname network.mtu" \
 
 # --- change_class -------------------------------------------------------------
 
-assert_eq "noop" "$(change_class lists.auto_update selective)" \
-	"расписание автообновления ничего не применяет"
-assert_eq "noop" "$(change_class lists.update_interval selective)" \
-	"интервал автообновления ничего не применяет"
-
-assert_eq "reload" "$(change_class lists.source selective)" \
-	"выбор списка в селективном режиме не трогает клиента"
-assert_eq "reload" "$(change_class domains.bypass selective)" \
-	"свои домены не трогают клиента"
-assert_eq "reload" "$(change_class network.lan_devices selective)" \
+assert_eq "reload" "$(change_class network.lan_devices)" \
 	"список LAN-интерфейсов пересобирает только nft"
-assert_eq "reload" "$(change_class network.intercept_dns selective)" \
-	"перехват DNS пересобирает только nft"
-assert_eq "reload" "$(change_class network.list_resolver selective)" \
-	"адрес резолвера уходит в dnsmasq.conf, а не в client.toml"
+assert_eq "reload" "$(change_class network.blackhole_on_down)" \
+	"killswitch пересобирает только nft"
+assert_eq "reload" "$(change_class network.include_router_traffic)" \
+	"трафик роутера пересобирает только nft"
 
-# В режиме full выбранные списки попадают в exclusions.extra, то есть в
-# client.toml — на них клиент обязан перезапуститься. Проверено по коду
-# regenerate: при full_exclude_lists=1 файл собирается из lists.source и
-# передаётся gen-config третьим аргументом.
-assert_eq "restart" "$(change_class lists.source full)" \
-	"в полном режиме списки уходят в конфиг клиента"
-assert_eq "restart" "$(change_class domains.direct full)" \
-	"в полном режиме свои домены тоже требуют перезапуска"
-
-assert_eq "restart" "$(change_class endpoint.hostname selective)" \
+assert_eq "restart" "$(change_class domains.direct)" \
+	"исключения уходят в client.toml — нужен перезапуск клиента"
+assert_eq "restart" "$(change_class endpoint.hostname)" \
 	"адрес сервера требует перезапуска клиента"
-assert_eq "restart" "$(change_class endpoint.password selective)" \
+assert_eq "restart" "$(change_class endpoint.password)" \
 	"пароль требует перезапуска клиента"
-assert_eq "restart" "$(change_class endpoint.certificate selective)" \
+assert_eq "restart" "$(change_class endpoint.certificate)" \
 	"сертификат требует перезапуска клиента"
-assert_eq "restart" "$(change_class network.mtu selective)" \
+assert_eq "restart" "$(change_class network.mtu)" \
 	"MTU уходит в client.toml"
-assert_eq "restart" "$(change_class main.log_level selective)" \
+assert_eq "restart" "$(change_class main.log_level)" \
 	"уровень журнала уходит в client.toml"
-assert_eq "restart" "$(change_class main.mode selective)" \
-	"смена режима требует перезапуска"
-assert_eq "restart" "$(change_class network.list_dns selective)" \
-	"выбор типа резолвера поднимает или снимает doh-инстанс"
-assert_eq "restart" "$(change_class network.list_doh_port selective)" \
-	"порт doh-прокси — аргумент команды инстанса"
-assert_eq "restart" "$(change_class network.doh_network selective)" \
-	"флаг «ко всей сети» решает, забирать ли чужой resolver_url"
 
 # Полный перезапуск с настоящим routing down нужен там, где иначе осталась бы
 # висеть прежняя таблица маршрутизации или прежнее правило по отметке.
-assert_eq "restart_full" "$(change_class network.table selective)" \
+assert_eq "restart_full" "$(change_class network.table)" \
 	"смена номера таблицы обязана снять прежнюю"
-assert_eq "restart_full" "$(change_class network.fwmark selective)" \
+assert_eq "restart_full" "$(change_class network.fwmark)" \
 	"смена отметки обязана снять прежнее правило"
-assert_eq "restart_full" "$(change_class main.enabled selective)" \
+assert_eq "restart_full" "$(change_class main.enabled)" \
 	"выключение службы обязано снять маршрутизацию"
 
 # Главная проверка консервативности: незнакомый ключ даёт то же поведение,
 # какое было до появления классификатора.
-assert_eq "restart_full" "$(change_class network.something_new selective)" \
+assert_eq "restart_full" "$(change_class network.something_new)" \
 	"незнакомый ключ даёт полное применение, а не дешёвое"
-assert_eq "restart_full" "$(change_class totally.unknown selective)" \
+assert_eq "restart_full" "$(change_class totally.unknown)" \
 	"незнакомая секция тоже"
 
 # --- classify_change: итог по всем изменениям --------------------------------
@@ -140,49 +115,23 @@ assert_eq "noop" "$(classify_change "$old" "$new")" \
 	"без изменений — ничего не делаем"
 
 cp "$old" "$new"
-printf 'lists.auto_update\t0\n' >> "$new"
-assert_eq "noop" "$(classify_change "$old" "$new")" \
-	"только расписание — ничего не делаем"
-
-cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
-assert_eq "reload" "$(classify_change "$old" "$new")" \
-	"только списки — применяем без перезапуска клиента"
+printf 'domains.direct\tbank2.example\n' >> "$new"
+assert_eq "restart" "$(classify_change "$old" "$new")" \
+	"только исключения — перезапуск клиента без разборки маршрутизации"
 
 # Итог — максимум по всем изменившимся ключам, а не первый или последний:
 # дешёвая правка рядом с дорогой не должна её обесценивать.
 cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
+printf 'domains.direct\tbank2.example\n' >> "$new"
 sed -i 's/a.example/b.example/' "$new"
 assert_eq "restart" "$(classify_change "$old" "$new")" \
-	"списки вместе с адресом сервера — перезапуск"
+	"исключения вместе с адресом сервера — перезапуск"
 
 cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
+printf 'domains.direct\tbank2.example\n' >> "$new"
 printf 'network.table\t881\n' >> "$new"
 assert_eq "restart_full" "$(classify_change "$old" "$new")" \
 	"смена таблицы перекрывает всё остальное"
-
-# Режим берётся из НОВОГО файла: применяем то состояние, к которому идём.
-cat > "$old" <<'EOF'
-main.mode	full
-lists.source	Russia/inside-dnsmasq-nfset.lst
-EOF
-cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
-assert_eq "restart" "$(classify_change "$old" "$new")" \
-	"в полном режиме правка списков даёт перезапуск"
-
-# Отсутствие main.mode в records — это селективный режим: uci-export не
-# выгружает пустые значения, а gen-lists и routing принимают ту же
-# подстановку по умолчанию.
-cat > "$old" <<'EOF'
-lists.source	Russia/inside-dnsmasq-nfset.lst
-EOF
-cp "$old" "$new"
-printf 'lists.source\tServices/telegram.lst\n' >> "$new"
-assert_eq "reload" "$(classify_change "$old" "$new")" \
-	"без main.mode режим считается селективным"
 
 # --- Полнота классификатора ---------------------------------------------------
 
@@ -252,10 +201,10 @@ count=$(printf '%s\n' "$keys" | grep -c .)
 
 # Контроль самого разбора: если он сломается и вернёт пустоту или горстку
 # ключей, проверка полноты станет зелёной, ничего не проверяя. Схема на
-# момент написания — 32 ключа; порог заведомо ниже, чтобы не падать от
+# момент написания — 19 ключей; порог заведомо ниже, чтобы не падать от
 # честного добавления или удаления одного, но выше того, что даёт разбор с
 # потерянной веткой однострочных циклов.
-if [ "$count" -lt 30 ]; then
+if [ "$count" -lt 15 ]; then
 	_tt_fail "разбор схемы uci-export нашёл только $count ключей — он сломан"
 else
 	_tt_pass "разбор схемы uci-export дал $count ключей"
@@ -266,7 +215,7 @@ for k in $keys; do
 	# certificate в records не попадает намеренно (PEM многострочный), но
 	# классифицировать его всё равно нужно — apply_settings сверяет его
 	# отдельным файлом.
-	if [ "$(change_class "$k" selective)" = "restart_full" ] \
+	if [ "$(change_class "$k")" = "restart_full" ] \
 			&& [ "$k" != "network.table" ] \
 			&& [ "$k" != "network.fwmark" ] \
 			&& [ "$k" != "main.enabled" ]; then

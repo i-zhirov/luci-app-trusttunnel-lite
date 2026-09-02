@@ -15,7 +15,7 @@
 # указывая на то, чего больше нет.
 . "$(dirname "$0")/lib.sh"
 
-INIT="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel"
+INIT="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel"
 
 sandbox="$TT_TEST_TMP/sandbox"
 bin="$sandbox/bin"
@@ -75,10 +75,6 @@ regenerate() {
 	cp "$TT_NEXT" "$RECORDS"
 }
 running() { return "${RUNNING_RC:-0}"; }
-link_dnsmasq() { echo "link_dnsmasq" >> "$TT_CALLS"; }
-flush_dns_cache() { echo "flush_dns_cache" >> "$TT_CALLS"; }
-warm_sets() { echo "warm_sets" >> "$TT_CALLS"; }
-unlink_dnsmasq() { echo "unlink_dnsmasq" >> "$TT_CALLS"; }
 logger() { :; }
 
 calls() { tr '\n' ' ' < "$TT_CALLS" | sed 's/ $//'; }
@@ -87,10 +83,9 @@ no_call() { grep -F "$1" "$TT_CALLS" 2>/dev/null || true; }
 base_records() {
 	cat <<'EOF'
 main.enabled	1
-main.mode	selective
 endpoint.hostname	a.example
 network.table	880
-lists.source	Russia/inside-dnsmasq-nfset.lst
+network.lan_devices	br-lan
 EOF
 }
 
@@ -105,43 +100,25 @@ setup() {
 
 # --- Дешёвый путь -------------------------------------------------------------
 
-# Правка списков в селективном режиме до client.toml не доходит, поэтому
-# клиента трогать не за что: перегенерировать, перезалить в ядро, перепривязать
-# маршрут на ЖИВОЕ устройство и сбросить кэш dnsmasq — наборы tt_bypass
-# обнулились вместе с пересозданной таблицей.
+# Правка LAN-интерфейсов до client.toml не доходит, поэтому клиента трогать не
+# за что: перегенерировать, перезалить в ядро и перепривязать маршрут на ЖИВОЕ
+# устройство.
 setup
-printf 'lists.source\tServices/youtube.lst\n' >> "$TT_NEXT"
+printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 apply_settings
 
 assert_eq "" "$(no_call 'restart')" \
-	"правка списков не перезапускает клиента"
+	"правка LAN-интерфейсов не перезапускает клиента"
 assert_contains "$(calls)" "routing up" \
 	"но правила перезаливаются в ядро"
 assert_contains "$(calls)" "routing reattach" \
 	"и маршрут перепривязывается к живому устройству"
-assert_contains "$(calls)" "link_dnsmasq" \
-	"публикация dnsmasq обновляется"
-assert_contains "$(calls)" "flush_dns_cache" \
-	"кэш сбрасывается, иначе наборы после routing up останутся пустыми"
 
 # Запись о применённом состоянии обязана догонять: следующее применение
 # сравнивает с ней, и без обновления та же правка считалась бы изменением
 # каждый раз.
-assert_contains "$(cat "$RECORDS")" "Services/youtube.lst" \
+assert_contains "$(cat "$RECORDS")" "br-guest" \
 	"запись о применённом состоянии обновлена"
-
-# --- Ничего применять не нужно ------------------------------------------------
-
-# Расписание автообновления читает cron во время работы. Ни клиент, ни ядро об
-# этом ключе не знают, поэтому верное число действий — ноль.
-setup
-printf 'lists.auto_update\t0\n' >> "$TT_NEXT"
-apply_settings
-
-assert_eq "" "$(calls)" \
-	"правка расписания не делает ничего"
-assert_contains "$(cat "$RECORDS")" "lists.auto_update" \
-	"но запись обновлена, иначе правка участвовала бы в каждом следующем сравнении"
 
 # --- Перезапуск с сохранением маршрутизации -----------------------------------
 
@@ -151,6 +128,13 @@ apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=1" \
 	"смена адреса сервера перезапускает клиента, не разбирая маршрутизацию"
+
+setup
+printf 'domains.direct\tbank.example\n' >> "$TT_NEXT"
+apply_settings
+
+assert_contains "$(calls)" "restart keep_routing=1" \
+	"новое исключение перезапускает клиента, не разбирая маршрутизацию"
 
 # --- Перезапуск с полным разбором ---------------------------------------------
 
@@ -187,7 +171,7 @@ assert_contains "$(calls)" "restart" \
 setup
 printf -- '-----BEGIN CERTIFICATE-----\nsame\n-----END CERTIFICATE-----\n' > "$TT_CERT_UCI"
 cp "$TT_CERT_UCI" "$OUTDIR/endpoint.pem"
-printf 'lists.source\tServices/youtube.lst\n' >> "$TT_NEXT"
+printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 apply_settings
 
 assert_eq "" "$(no_call 'restart')" \
@@ -201,7 +185,7 @@ rm -f "$OUTDIR/endpoint.pem"
 # ядре в этот момент в неизвестном состоянии, и оставить всё как есть значило
 # бы показывать работающую службу поверх недогруженной таблицы.
 setup
-printf 'lists.source\tServices/youtube.lst\n' >> "$TT_NEXT"
+printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 ROUTING_UP_RC=1
 apply_settings
 
@@ -209,7 +193,7 @@ assert_contains "$(calls)" "restart keep_routing=0" \
 	"провал routing up откатывает к полному перезапуску"
 
 setup
-printf 'lists.source\tServices/youtube.lst\n' >> "$TT_NEXT"
+printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 REGEN_RC=1
 apply_settings
 
@@ -227,7 +211,7 @@ assert_contains "$(calls)" "restart" \
 
 # Служба не работает: применять поверх ничего нечего.
 setup
-printf 'lists.source\tServices/youtube.lst\n' >> "$TT_NEXT"
+printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 RUNNING_RC=1
 apply_settings
 
@@ -250,7 +234,6 @@ assert_eq "0" "$(ls "$OUTDIR" | grep -c 'settings.tsv.next' || true)" \
 # Проверяется настоящий stop_service, а не заглушка: именно он решает, звать
 # ли routing down.
 setup
-_TT_RESTARTING=1
 _TT_KEEP_ROUTING=1
 stop_service
 
@@ -258,14 +241,11 @@ assert_eq "" "$(no_call 'routing down')" \
 	"на перезапуске с сохранением маршрутизация не разбирается"
 
 setup
-_TT_RESTARTING=0
 _TT_KEEP_ROUTING=0
 stop_service
 
 assert_contains "$(calls)" "routing down" \
 	"обычный stop разбирает маршрутизацию как раньше"
-assert_contains "$(calls)" "unlink_dnsmasq" \
-	"и снимает публикацию dnsmasq"
 
 # Прерванный старт. Расчёт «разбирать не нужно» держится на том, что start
 # поднимет всё заново; если он не дошёл до конца — служба выключена, а
@@ -273,14 +253,11 @@ assert_contains "$(calls)" "unlink_dnsmasq" \
 # несуществующий туннель. Помеченный трафик уходил бы в blackhole при
 # выключенном обходе, и в интерфейсе это выглядело бы как «нет интернета».
 setup
-_TT_RESTARTING=1
 _TT_KEEP_ROUTING=1
 abort_restart_cleanup
 
 assert_contains "$(calls)" "routing down" \
 	"прерванный старт разбирает сохранённую маршрутизацию"
-assert_contains "$(calls)" "unlink_dnsmasq" \
-	"и снимает публикацию dnsmasq"
 assert_eq "0" "${_TT_KEEP_ROUTING}" \
 	"признак сбрасывается, чтобы повторный вызов не разбирал дважды"
 
