@@ -45,11 +45,6 @@ One command on the router:
 sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
 ```
 
-> The repository is currently **private**, and the installer talks to the
-> GitHub releases API unauthenticated — so the one-liner (and the update
-> check on the Status page) only works once the repository is made public.
-> Until then, download the `.apk` from the releases page manually.
-
 What the installer does:
 
 1. Checks that this is OpenWrt 25.12+ with `apk` and a supported CPU.
@@ -164,7 +159,7 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
 ## Notes and caveats
 
 - The update check on the Status page targets this repository's releases —
-  it needs the repository to be public, same as the installer.
+  the same GitHub releases API the installer uses.
 - The firewall zone matches `tun+`, so it also covers other VPNs' tun
   devices if you run more than one.
 - The client binary comes from the official TrustTunnel installer; the
