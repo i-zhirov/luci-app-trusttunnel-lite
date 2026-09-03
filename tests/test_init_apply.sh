@@ -59,12 +59,12 @@ assert_eq "domains.direct" "$(changed_keys "$old" "$new")" \
 	"удалённый элемент списка виден"
 
 cp "$old" "$new"
-sed -i 's/a.example/b.example/' "$new"
+sed -i '' 's/a.example/b.example/' "$new"
 assert_eq "endpoint.hostname" "$(changed_keys "$old" "$new")" \
 	"изменённое скалярное значение видно"
 
 cp "$old" "$new"
-sed -i 's/a.example/b.example/' "$new"
+sed -i '' 's/a.example/b.example/' "$new"
 printf 'network.mtu\t1400\n' >> "$new"
 assert_eq "endpoint.hostname network.mtu" \
 	"$(changed_keys "$old" "$new" | tr '\n' ' ' | sed 's/ $//')" \
@@ -123,7 +123,7 @@ assert_eq "restart" "$(classify_change "$old" "$new")" \
 # дешёвая правка рядом с дорогой не должна её обесценивать.
 cp "$old" "$new"
 printf 'domains.direct\tbank2.example\n' >> "$new"
-sed -i 's/a.example/b.example/' "$new"
+sed -i '' 's/a.example/b.example/' "$new"
 assert_eq "restart" "$(classify_change "$old" "$new")" \
 	"исключения вместе с адресом сервера — перезапуск"
 

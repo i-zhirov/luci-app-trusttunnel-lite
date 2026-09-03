@@ -123,7 +123,7 @@ assert_contains "$(cat "$RECORDS")" "br-guest" \
 # --- Перезапуск с сохранением маршрутизации -----------------------------------
 
 setup
-sed -i 's/a.example/b.example/' "$TT_NEXT"
+sed -i '' 's/a.example/b.example/' "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=1" \
@@ -142,14 +142,18 @@ assert_contains "$(calls)" "restart keep_routing=1" \
 # снимается. Сохранить прежнюю и поднять новую значило бы оставить старую
 # таблицу и старое правило висеть навсегда.
 setup
-sed -i 's/network.table\t880/network.table\t881/' "$TT_NEXT"
+# \t как эскейп в скрипте s/// понимает не всякий sed (BSD — нет), а в
+# awk-строке он одинаков везде, поэтому замена идёт через awk.
+awk 'BEGIN { OFS = "\t" } $1 == "network.table" { $2 = "881" } { print }' \
+	"$TT_NEXT" > "$TT_NEXT.tmp" && mv "$TT_NEXT.tmp" "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
 	"смена номера таблицы разбирает маршрутизацию полностью"
 
 setup
-sed -i 's/main.enabled\t1/main.enabled\t0/' "$TT_NEXT"
+awk 'BEGIN { OFS = "\t" } $1 == "main.enabled" { $2 = "0" } { print }' \
+	"$TT_NEXT" > "$TT_NEXT.tmp" && mv "$TT_NEXT.tmp" "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
