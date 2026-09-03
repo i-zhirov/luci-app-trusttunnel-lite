@@ -1,17 +1,18 @@
 #!/bin/sh
-# Выгружает UCI-конфиг trusttunnel в records-формат на stdout.
-# Схема перечислена явно: так в records не попадает мусор из чужих правок.
+# Exports the trusttunnel UCI config into the records format on stdout.
+# The schema is enumerated explicitly: this keeps foreign edits' junk out
+# of records.
 #
-# `set -u` здесь НЕ ставится и не должен возвращаться. ПРОВЕРЕНО на живом
-# роутере: /lib/functions.sh читает неинициализированные переменные — первой
-# IPKG_INSTROOT, затем CONFIG_LIST_STATE внутри config_load — и под `set -u`
-# скрипт падает молча, без вывода единой записи. Это первый шаг старта
-# службы, так что служба вообще не стартует. Библиотека несовместима с этим
-# режимом целиком, а не в каком-то одном месте: предварительная инициализация
-# переменных по одной не помогает, потому что новые необъявленные ссылки
-# появляются глубже по мере выполнения config_load/config_get.
+# `set -u` is NOT set here and must not return. VERIFIED on a live router:
+# /lib/functions.sh reads uninitialized variables — first IPKG_INSTROOT,
+# then CONFIG_LIST_STATE inside config_load — and under `set -u` the script
+# fails silently, printing not a single record. This is the first step of
+# the service start, so the service does not start at all. The library is
+# incompatible with this mode as a whole, not in some single spot:
+# pre-initializing variables one by one does not help, because new
+# undeclared references appear deeper as config_load/config_get execute.
 
-# Библиотека OpenWrt, на машине линтера отсутствует.
+# OpenWrt library, absent on the linter's machine.
 # shellcheck disable=SC1091
 . /lib/functions.sh
 config_load trusttunnel
@@ -31,9 +32,10 @@ listopt() {
 }
 
 for o in enabled log_level; do scalar main "$o"; done
-# endpoint.certificate намеренно НЕ выгружается: PEM многострочный, а значение
-# в records не может содержать перевод строки. Сертификат пишет в отдельный
-# файл init-скрипт и передаёт его gen-config вторым аргументом.
+# endpoint.certificate is deliberately NOT exported: the PEM is multi-line,
+# and a record value cannot contain a newline. The init script writes the
+# certificate into a separate file and passes it to gen-config as its
+# second argument.
 for o in hostname username password protocol anti_dpi post_quantum \
 		skip_verification has_ipv6; do
 	scalar endpoint "$o"
@@ -41,10 +43,11 @@ done
 listopt endpoint address
 listopt endpoint dns_upstream
 
-# Опции "device" здесь БОЛЬШЕ НЕТ: имя устройства выбирает клиент, такой
-# настройки не существует. Режим "selective" и вся list-механика (list_dns,
-# list_resolver, doh_network, intercept_dns) выпилены: fork гонит весь трафик
-# через туннель, поэтому эти опции бессмысленны.
+# The "device" option is GONE here: the client picks the device name and
+# no such setting exists. The "selective" mode and the whole list machinery
+# (list_dns, list_resolver, doh_network, intercept_dns) were removed: the
+# fork sends all traffic through the tunnel, so those options are
+# meaningless.
 for o in mtu table fwmark blackhole_on_down include_router_traffic \
 		lan_devices; do
 	scalar network "$o"

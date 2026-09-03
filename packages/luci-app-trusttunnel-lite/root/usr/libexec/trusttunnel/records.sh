@@ -1,17 +1,16 @@
-# Чтение records-файла: строки вида "section.option<TAB>value".
-# Требует TT_RECORDS с путём к файлу. Подключать через точку.
+# Reading the records file: lines of the form "section.option<TAB>value".
+# Requires TT_RECORDS with the path to the file. Source with a dot.
 #
-# Проверка "${TT_RECORDS:?...}" стоит в НАЧАЛЕ КАЖДОЙ функции, а не как
-# отдельная строка на верхнем уровне файла. Все четыре реальных вызывающих
-# (gen-config, gen-lists, fetch-lists, routing) делают `. records.sh` ДО того,
-# как присваивают TT_RECORDS из своего аргумента — так проверка на верхнем
-# уровне срабатывала бы при каждом подключении файла, ещё до того как
-# вызывающий успел бы задать переменную, и валила бы все четыре генератора
-# на пустом месте. Проверка внутри функций достигает той же цели —
-# несконфигурированный TT_RECORDS падает с понятной ошибкой, а не тихо
-# превращается в пустое имя файла, на котором awk молча читает stdin, — но
-# срабатывает в момент фактического обращения, когда TT_RECORDS уже обязан
-# быть установлен.
+# The "${TT_RECORDS:?...}" check sits at the START OF EVERY FUNCTION rather
+# than as a standalone line at the top level. All four real callers
+# (gen-config, gen-lists, fetch-lists, routing) `. records.sh` BEFORE
+# assigning TT_RECORDS from their argument — so a top-level check would
+# fire on every sourcing, before the caller could set the variable, and
+# would break all four generators for nothing. A check inside the functions
+# achieves the same goal — an unconfigured TT_RECORDS fails with a clear
+# error instead of silently becoming an empty file name on which awk
+# quietly reads stdin — but fires at the moment of the actual access, when
+# TT_RECORDS must already be set.
 
 tt_list() {
 	: "${TT_RECORDS:?TT_RECORDS is not set}"

@@ -1,18 +1,18 @@
 #!/bin/sh
-# Заводит зону фаервола для tun-устройства клиента.
-# Идемпотентно: повторный запуск ничего не дублирует.
+# Creates the firewall zone for the client's tun device.
+# Idempotent: a repeated run duplicates nothing.
 
-# Библиотека OpenWrt, на машине линтера отсутствует.
+# OpenWrt library, absent on the linter's machine.
 # shellcheck disable=SC1091
 . /lib/functions.sh
 
 zone_exists=""
-# Переменная с префиксом `_`, а не `local`: `local` не входит в POSIX, и
-# `shellcheck -s sh` сообщает об этом (SC3043) с ненулевым кодом возврата,
-# роняя CI на первом же push. Остальные наши скрипты по той же причине
-# используют `_`-переменные, так что здесь это ещё и единообразно.
-# Вызывается через config_foreach, а _zname присваивает config_get из
-# библиотеки OpenWrt — ни того, ни другого линтер статически не видит.
+# A variable with the `_` prefix rather than `local`: `local` is not in
+# POSIX, and `shellcheck -s sh` reports it (SC3043) with a non-zero exit
+# code, failing CI on the very first push. The rest of our scripts use
+# `_`-variables for the same reason, so this is consistent too.
+# Called via config_foreach, and _zname is assigned by config_get from the
+# OpenWrt library — neither is visible to the linter statically.
 # shellcheck disable=SC2329,SC2317,SC2154
 find_zone() {
 	config_get _zname "$1" name
@@ -21,19 +21,21 @@ find_zone() {
 config_load firewall
 config_foreach find_zone zone
 
-# Схлопывание дубликатов зоны. Ранняя версия этого скрипта читала имя зоны с
-# ПУСТЫМ аргументом секции (`config_get _zname "" name` вместо `"$1"`), поэтому
-# zone_exists никогда не выставлялся и блок создания срабатывал при КАЖДОЙ
-# установке. На живом роутере накопилось три одинаковых зоны trusttunnel и три
-# правила forwarding — каждая генерирует `define trusttunnel_devices`, fw4
-# падал с «redefinition of symbol», и весь фаервол не поднимался: сеть теряла
-# пересылку из LAN в WAN, а работали только домены из списков, потому что их
-# маскарадит НАША зона в своей таблице.
+# Collapsing duplicate zones. An early version of this script read the zone
+# name with an EMPTY section argument (`config_get _zname "" name` instead
+# of `"$1"`), so zone_exists was never set and the creation block fired on
+# EVERY install. On a live router three identical trusttunnel zones and
+# three forwarding rules piled up — each generates `define
+# trusttunnel_devices`, fw4 failed with "redefinition of symbol", and the
+# whole firewall did not come up: the network lost LAN-to-WAN forwarding,
+# and only the list domains worked, because OUR zone masquerades them in
+# its own table.
 #
-# Оставляем первую зону trusttunnel и первое forwarding на неё, лишние удаляем.
-# Идёт до создания, чтобы не считать дубли отсутствием зоны.
+# Keep the first trusttunnel zone and the first forwarding to it, delete the
+# rest. Runs before creation so duplicates are not mistaken for a missing
+# zone.
 _seen_zone=0
-# config_foreach + config_get, линтеру не видны.
+# config_foreach + config_get, invisible to the linter.
 # shellcheck disable=SC2329,SC2317,SC2154
 dedup_zone() {
 	config_get _n "$1" name
@@ -74,15 +76,17 @@ if [ -z "$zone_exists" ]; then
 	uci set firewall."$z".forward='REJECT'
 	uci set firewall."$z".masq='1'
 	uci set firewall."$z".mtu_fix='1'
-	# Шаблон, а не конкретное имя: устройство создаёт КЛИЕНТ и выбирает имя
-	# сам (tun0, дальше по возрастанию), настройкой это не управляется. Зона,
-	# привязанная к нашему прежнему tt0, не покрывала бы устройство клиента
-	# вовсе — форвардинг в туннель отбрасывался бы фаерволом. Синтаксис `tun+`
-	# общепринят для зон OpenWrt: так же устроены конфигурации OpenVPN.
+	# A pattern, not a concrete name: the device is created by the CLIENT,
+	# which picks the name itself (tun0, then increasing); no setting
+	# governs it. A zone bound to our former tt0 would not cover the
+	# client's device at all — forwarding into the tunnel would be dropped
+	# by the firewall. The `tun+` syntax is the common convention for
+	# OpenWrt zones: OpenVPN configurations are laid out the same way.
 	#
-	# Побочный эффект осознанный: зона накроет и чужие tun-устройства, если на
-	# роутере есть другой VPN. Альтернатива — переписывать зону при каждом
-	# запуске службы и перезагружать фаервол, что дороже и заметнее.
+	# The side effect is deliberate: the zone will also cover foreign tun
+	# devices if another VPN runs on the router. The alternative — rewriting
+	# the zone on every service start and reloading the firewall — is more
+	# expensive and more visible.
 	uci add_list firewall."$z".device='tun+'
 
 	f=$(uci add firewall forwarding)
@@ -90,23 +94,24 @@ if [ -z "$zone_exists" ]; then
 	uci set firewall."$f".dest='trusttunnel'
 
 	uci commit firewall
-	# Без reload зона и правило forwarding остаются только в UCI: tt0 не
-	# принадлежит ни одной зоне до следующей перезагрузки, форвардинг в
-	# туннель отбрасывается, а страница состояния при этом показывает
-	# устройство, правило, таблицу и nft как исправные — зелёное на сломанном
-	# сразу после установки.
+	# Without a reload the zone and the forwarding rule exist only in UCI:
+	# tt0 belongs to no zone until the next reboot, forwarding into the
+	# tunnel is dropped, and the status page meanwhile shows the device,
+	# the rule, the table and nft as healthy — green on broken right after
+	# installation.
 	/etc/init.d/firewall reload >/dev/null 2>&1
 fi
 
-# Миграция уже установленных роутеров. Зона, созданная прежней версией, привязана
-# к устройству tt0, которое мы больше не создаём: устройство теперь принадлежит
-# клиенту и называется иначе. Без этой правки после обновления зона не покрывает
-# ни одного живого интерфейса, форвардинг в туннель отбрасывается фаерволом, а
-# страница состояния показывает устройство, правило, таблицу и nft исправными —
-# то самое «зелёное на сломанном», от которого мы избавлялись весь проект.
+# Migration for already-installed routers. A zone created by a former
+# version is bound to the tt0 device, which we no longer create: the device
+# now belongs to the client and is named differently. Without this fix the
+# zone covers no live interface after an update, forwarding into the tunnel
+# is dropped by the firewall, and the status page shows the device, the
+# rule, the table and nft as healthy — the very "green on broken" we have
+# been eliminating throughout the project.
 #
-# Блок выше не сработает: он выполняется только когда зоны ещё нет.
-# Тот же случай: вызов через config_foreach, присваивание через config_get.
+# The block above will not fire: it runs only when no zone exists yet.
+# Same case: called via config_foreach, assigned via config_get.
 # shellcheck disable=SC2329,SC2317,SC2154
 migrate_zone_device() {
 	config_get _zn "$1" name
@@ -130,28 +135,30 @@ if [ -n "$zone_exists" ]; then
 	fi
 fi
 
-# Кэш проверки обновлений сбрасывается при КАЖДОЙ установке пакета: он хранит
-# «последний релиз на GitHub», и после обновления там заведомо лежит ответ,
-# полученный до выхода установленной версии. Иначе страница состояния сравнивает
-# свежий пакет с устаревшим ответом и делает из этого вывод «актуальная версия».
-# Стоит это ровно одного запроса к GitHub при первом открытии страницы.
+# The update check cache is reset on EVERY package install: it stores the
+# "latest release on GitHub", and after an update it certainly holds an
+# answer obtained before the installed version was released. Otherwise the
+# status page compares a fresh package with a stale answer and concludes
+# "up to date". This costs exactly one GitHub request on the first page
+# open.
 mkdir -p /var/cache/trusttunnel
 rm -f /var/cache/trusttunnel/release.json
 
 
-# Регистрация init-скрипта в загрузке. БЕЗ ЭТОГО туннель не поднимается после
-# перезагрузки роутера вообще: проверено на живом железе — после ребута в
-# /etc/rc.d/ не было ссылки, в журнале ни одной записи, служба не запускалась.
+# Registering the init script in the boot sequence. WITHOUT THIS the tunnel
+# does not come up after a router reboot at all: verified on live hardware —
+# after a reboot there was no link in /etc/rc.d/, not a single log line, the
+# service did not start.
 #
-# Легко спутать два разных «включено», и именно на этом дефект и держался:
-# флажок «Включить» в интерфейсе выставляет trusttunnel.main.enabled, а это
-# всего лишь проверка ВНУТРИ start_service. За автозапуск отвечает ссылка в
-# rc.d, и её не создавал никто.
+# Two different "enabled"s are easy to confuse, and the defect rode exactly
+# on that: the "Enable" checkbox in the UI sets trusttunnel.main.enabled,
+# which is only a check INSIDE start_service. Auto-start is the rc.d link's
+# job, and nobody created it.
 #
-# Скрипт регистрируется ВСЕГДА, независимо от main.enabled: start_service сам
-# выходит в начале, если флаг снят, и пишет об этом в журнал. Так одно решение
-# («стартовать ли») остаётся в одном месте, а не размазывается по двум
-# механизмам с разной семантикой.
+# The script is registered ALWAYS, regardless of main.enabled: start_service
+# itself exits at the beginning when the flag is off and logs that. Thus the
+# single decision ("whether to start") stays in one place instead of being
+# spread across two mechanisms with different semantics.
 /etc/init.d/trusttunnel enable >/dev/null 2>&1
 
 rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null
