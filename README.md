@@ -32,8 +32,8 @@ What the fork does **not** touch: dnsmasq, its config, its cache, the
   not supported.
 - CPU in {`x86_64`, `aarch64`, `armv7l`/`armv8l`, `mips`, `mipsel`} — the
   TrustTunnel client ships prebuilt binaries only for these. The installer
-  checks `uname -m` before installing anything. The Xiaomi Mi Router 3G
-  (MT7621, `mipsel`) is supported.
+  checks `uname -m` before installing anything, so an unsupported device
+  fails cleanly, before anything is changed.
 - Internet access from the router (GitHub must be reachable for install and
   for the update check).
 
