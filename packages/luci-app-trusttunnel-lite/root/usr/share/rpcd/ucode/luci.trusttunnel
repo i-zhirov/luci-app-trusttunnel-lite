@@ -1,12 +1,12 @@
 'use strict';
 
 import { popen, readfile, writefile, access, unlink, stat, mkdir, chmod } from 'fs';
-// rand/srand живут в модуле math, а НЕ в ядре ucode: без этого импорта
-// tmp_path() выбрасывает "left-hand side is not a function", и вместе с ним
-// ломаются импорт конфига и проверка домена. Модуль объявлен в LUCI_DEPENDS
-// как +ucode-mod-math — полагаться на то, что его притянет кто-то другой,
-// нельзя: на минимальной сборке его не будет, и упадёт ВЕСЬ бэкенд, а не
-// одна функция.
+// rand/srand live in the math module, NOT in the ucode core: without this
+// import tmp_path() throws "left-hand side is not a function", breaking the
+// config import and the domain check along with it. The module is declared
+// in LUCI_DEPENDS as +ucode-mod-math — relying on someone else to pull it in
+// is not an option: on a minimal build it would be missing, and the WHOLE
+// backend would fail, not a single function.
 import { rand, srand } from 'math';
 
 srand(time());
@@ -15,18 +15,18 @@ const LIBDIR = '/usr/libexec/trusttunnel';
 const OUTDIR = '/var/etc/trusttunnel';
 const RECORDS = OUTDIR + '/settings.tsv';
 const CLIENT = '/opt/trusttunnel_client/trusttunnel_client';
-// Проверка обновлений идёт к релизам НАШЕГО репозитория и кэшируется на диск:
-// у GitHub 60 неавторизованных запросов в час на адрес, а страница состояния
-// опрашивается каждые 10 секунд. Без кэша один открытый браузер исчерпал бы
-// лимит за десять минут.
+// The update check goes to OUR repository's releases and is cached to disk:
+// GitHub allows 60 unauthenticated requests per hour per address, and the
+// status page polls every 10 seconds. Without a cache a single open browser
+// would exhaust the limit in ten minutes.
 const RELEASE_URL = 'https://api.github.com/repos/i-zhirov/luci-app-trusttunnel-lite/releases/latest';
 const VERSION_CACHE = '/var/cache/trusttunnel/release.json';
-// Шесть часов — четыре запроса в сутки на роутер, то есть исчезающая доля от
-// 60 неавторизованных запросов в час, которыми ограничивает GitHub.
+// Six hours is four requests per day per router — a vanishing fraction of
+// the 60 unauthenticated requests per hour GitHub allows.
 const RELEASE_TTL = 21600;
 
-// sh() склеивает stderr в stdout: нужно там, где текст ошибки сам является
-// результатом (управление службой, лог, импорт).
+// sh() merges stderr into stdout: needed where the error text is itself the
+// result (service control, log, import).
 function sh(cmd) {
 	let p = popen(cmd + ' 2>&1');
 	if (!p)
@@ -36,9 +36,9 @@ function sh(cmd) {
 	return { code: code, out: out };
 }
 
-// sh_out() отдаёт только stdout. Обязателен там, где вывод разбирается:
-// normalize пишет "dropped N" в stderr, nft и nslookup тоже могут писать
-// предупреждения, и склейка потоков превратила бы их в данные.
+// sh_out() returns stdout only. Required wherever the output is parsed:
+// normalize writes "dropped N" to stderr, nft and nslookup may write
+// warnings too, and merging the streams would turn them into data.
 function sh_out(cmd) {
 	let p = popen(cmd + ' 2>/dev/null');
 	if (!p)
@@ -49,22 +49,22 @@ function sh_out(cmd) {
 }
 
 function shq(s) {
-	// Одинарные кавычки в оболочке: закрыть, вставить экранированную, открыть.
+	// Single quotes in the shell: close, insert the escaped one, reopen.
 	return "'" + replace('' + s, "'", "'\\''") + "'";
 }
 
-// Непредсказуемое имя во временном каталоге плюс mode 600 сразу после
-// записи. Эти файлы пишутся от root в /tmp — каталоге с правами на запись
-// для всех — и как минимум один из вызывающих (import_config) кладёт туда
-// пароль endpoint в открытом виде. Фиксированное имя плюс права по умолчанию
-// делали файл читаемым (и заменяемым по предсказуемому пути) для любого
-// локального непривилегированного процесса в окне между записью и чтением.
+// An unpredictable name in the temporary directory plus mode 600 right after
+// writing. These files are written by root into /tmp — a world-writable
+// directory — and at least one caller (import_config) puts the endpoint
+// password there in the clear. A fixed name plus default permissions made
+// the file readable (and replaceable via a predictable path) for any local
+// unprivileged process in the window between writing and reading.
 function tmp_path(prefix) {
 	return sprintf('/tmp/.tt-%s-%08x%04x', prefix, time(), rand() % 65536);
 }
 
-// writefile() + chmod(0600) в одном месте: чтобы никто из вызывающих не мог
-// забыть про права после создания файла с секретом внутри.
+// writefile() + chmod(0600) in one place: so no caller can forget the
+// permissions after creating a file with a secret inside.
 function write_secret_tmp(prefix, data) {
 	let path = tmp_path(prefix);
 	writefile(path, data);
@@ -72,11 +72,12 @@ function write_secret_tmp(prefix, data) {
 	return path;
 }
 
-// Сравнение версий по числовым компонентам. Строковое сравнение здесь неверно:
-// "1.0.10" лексикографически меньше "1.0.9", то есть обновление молча не
-// предлагалось бы на каждом десятом выпуске. Ведущая "v" тега и суффикс "-rN"
-// пакетной версии отбрасываются: они не участвуют в сравнении выпусков.
-// Возврат: >0 если a новее b, <0 если старее, 0 если равны или не разобрать.
+// Version comparison by numeric components. String comparison is wrong here:
+// "1.0.10" is lexicographically smaller than "1.0.9", so an update would
+// silently never be offered on every tenth release. The leading "v" of the
+// tag and the "-rN" suffix of the package version are dropped: they do not
+// take part in comparing releases.
+// Return: >0 if a is newer than b, <0 if older, 0 if equal or unparseable.
 function vercmp(a, b) {
 	function parts(s) {
 		s = replace('' + s, /^[vV]/, '');
@@ -121,14 +122,14 @@ function uciget(path) {
 }
 
 function routing_status() {
-	// device: имя устройства, которое создал КЛИЕНТ, или null. Своего
-	// устройства у пакета больше нет, поэтому имя из настроек здесь не
-	// участвует — интерфейс обязан показывать то, что есть в системе, а не то,
-	// что записано в конфиге.
+	// device: the name of the device the CLIENT created, or null. The package
+	// no longer has a device of its own, so the name from the settings does
+	// not take part here — the UI must show what is in the system, not what
+	// is written in the config.
 	let out = { device_up: false, rule: false, table: false, nft: false, device: null };
 	if (!access(RECORDS)) return out;
-	// sh_out, а не sh: вывод разбирается по точным строкам, поэтому stderr
-	// в нём не нужен даже если сейчас routing status его и не печатает.
+	// sh_out, not sh: the output is parsed line by line, so stderr is not
+	// needed in it even if routing status does not print any today.
 	let r = sh_out(LIBDIR + '/routing status ' + shq(RECORDS) + ' ' + shq(OUTDIR));
 	for (let line in split(r.out, '\n')) {
 		if (line == 'device up') out.device_up = true;
@@ -175,10 +176,11 @@ return {
 			let rec = records();
 			let rs = routing_status();
 			let running = sh('/etc/init.d/trusttunnel running').code == 0;
-			// Устройство берётся из ЖИВОГО состояния, а не из настроек: его создаёт
-			// клиент и имя выбирает сам. null означает "клиент устройства пока не
-			// создал" — и это честнее, чем показывать имя из конфига, которого в
-			// системе нет.
+			// The device comes from the LIVE state, not from the settings:
+			// the client creates it and picks the name itself. null means
+			// "the client has not created a device yet" — which is more
+			// honest than showing a config name that does not exist in the
+			// system.
 			let dev = rs.device;
 			return {
 				enabled: uciget('trusttunnel.main.enabled') == '1',
@@ -258,8 +260,8 @@ return {
 	probe: {
 		args: {},
 		call: function() {
-			// Устройство берётся из живого состояния: своего у нас нет, а имя из
-			// настроек указывало бы в никуда.
+			// The device comes from the live state: we have none of our own,
+			// and a name from the settings would point nowhere.
 			let dev = routing_status().device;
 			if (dev == null)
 				return {
@@ -267,7 +269,7 @@ return {
 					direct: { error: 'not attempted' }
 				};
 			let url = 'https://api.ipify.org';
-			// Здесь stderr нужен как текст ошибки, поэтому sh(), а не sh_out().
+			// stderr is needed here as the error text, so sh(), not sh_out().
 			let via = sh('curl -fsS --max-time 8 --interface ' + shq(dev) + ' ' + shq(url));
 			let direct = sh('curl -fsS --max-time 8 ' + shq(url));
 			return {
@@ -308,24 +310,26 @@ return {
 		}
 	},
 
-	// Версии установленного и доступного. Метод вызывается ОДИН раз при
-	// отрисовке страницы, а не из опроса состояния: сетевая часть здесь
-	// кэшируется, но даже кэшированный вызов незачем делать каждые 10 секунд.
-	// Диагностика: один вызов прогоняет всю цепочку от настроек до трафика и
-	// возвращает плоский список проверок. Вызывается ТОЛЬКО по кнопке — часть
-	// проверок ходит в сеть и занимает секунды, в опросе состояния им не место.
+	// Versions of the installed and the available. The method is called ONCE
+	// per page render, not from the status poll: the network part is cached
+	// here, but even a cached call does not need to happen every 10 seconds.
+	// Diagnostics: one call runs the whole chain from settings to traffic and
+	// returns a flat list of checks. It is called ONLY by the button — some
+	// checks go to the network and take seconds; they do not belong in the
+	// status poll.
 	//
-	// Каждая проверка несёт не только вердикт, но и подсказку: список, где
-	// написано "нет" без объяснения что делать, заставляет пользователя гадать,
-	// а именно от этого раздел и должен избавить.
+	// Each check carries not only a verdict but a hint: a list that says "no"
+	// without explaining what to do makes the user guess, and getting rid of
+	// exactly that is what this section is for.
 	diagnose: {
 		args: {},
 		call: function() {
 			let rec = records();
 			let rs = routing_status();
 			let checks = [];
-			// Устройство клиента, а не имя из настроек: своего устройства у пакета
-			// нет. null означает, что клиент его ещё не создал.
+			// The client's device, not a name from the settings: the package
+			// has no device of its own. null means the client has not
+			// created one yet.
 			let dev = rs.device;
 			let enabled = uciget('trusttunnel.main.enabled') == '1';
 			let running = sh('/etc/init.d/trusttunnel running').code == 0;
@@ -337,7 +341,7 @@ return {
 				});
 			}
 
-			// --- Настройка ---
+			// --- Config ---
 			let addrs = rec['endpoint.address'] ?? [];
 			add('config', 'Endpoint address', length(addrs) ? 'ok' : 'fail',
 				length(addrs) ? join(', ', addrs) : 'not set',
@@ -354,7 +358,7 @@ return {
 				length(host) ? host : 'not set',
 				length(host) ? '' : 'Without it the TLS session uses the bare address, which many servers reject.');
 
-			// --- Предпосылки ---
+			// --- Prerequisites ---
 			let cl = access(CLIENT);
 			let clver = '';
 			if (cl) {
@@ -371,7 +375,7 @@ return {
 				tun ? '/dev/net/tun present' : 'missing',
 				tun ? '' : 'Install kmod-tun.');
 
-			// --- Служба ---
+			// --- Service ---
 			add('service', 'Enabled', enabled ? 'ok' : 'warn',
 				enabled ? 'yes' : 'no',
 				enabled ? '' : 'Turn on Enable on the Settings page, then press Start.');
@@ -379,37 +383,39 @@ return {
 				running ? 'yes' : 'no',
 				running ? '' : (enabled ? 'Press Start and read the client log below.' : ''));
 
-			// --- Ядро ---
-			// Состояние ядра судится по тому, БЫЛА ЛИ применена конфигурация
-			// (есть settings.tsv), а не по тому, работает ли клиент. Иначе
-			// получалась несогласованность: при упавшем клиенте правило и
-			// таблицы показывались «в порядке», а устройство — «пропущено»,
-			// хотя создаёт их один и тот же routing up.
+			// --- Kernel ---
+			// Kernel state is judged by whether the configuration HAS been
+			// applied (settings.tsv exists), not by whether the client runs.
+			// Otherwise there was an inconsistency: with a fallen client the
+			// rule and the tables showed "ok", while the device showed
+			// "skipped", even though one and the same routing up creates
+			// them all.
 			let applied = access(RECORDS) ? true : false;
 			let want_mtu = first(rec, 'network.mtu', '1350');
 			let dev_exists = (dev != null) && access('/sys/class/net/' + dev) ? true : false;
 			let mtu_now = dev_exists
 				? trim(sh_out('cat /sys/class/net/' + shq(dev) + '/mtu').out) : '';
 
-			// Устройство создаёт КЛИЕНТ, а мы к нему привязываем маршрут. Поэтому
-			// «устройства нет» — это не отказ маршрутизации, а отказ клиента, и
-			// подсказка должна вести в его журнал, а не в настройки сети.
+			// The device is created by the CLIENT, and we attach the route to
+			// it. So "no device" is not a routing failure but a client
+			// failure, and the hint must lead to its log, not to the network
+			// settings.
 			add('kernel', 'Tunnel device', dev_exists ? 'ok' : (running ? 'fail' : 'skip'),
 				dev_exists ? dev + ', MTU ' + (length(mtu_now) ? mtu_now : '?')
 				           : 'the client has not created one',
 				dev_exists ? '' : 'The device belongs to the client, not to this package. Read the client log below.');
 
-			// MTU задаётся клиенту через mtu_size в его конфиге, а не выставляется
-			// нами на устройстве: устройство не наше. Расхождение означает, что
-			// клиент работает со старым конфигом.
+			// MTU is given to the client via mtu_size in its config, not set
+			// by us on the device: the device is not ours. A mismatch means
+			// the client runs with an old config.
 			if (dev_exists && length(mtu_now) && mtu_now != want_mtu)
 				add('kernel', 'MTU matches settings', 'warn',
 					'device ' + mtu_now + ', configured ' + want_mtu,
 					'Restart the service so the client picks up the configured value.');
 
-			// Привязка маршрута — отдельная от существования устройства вещь:
-			// устройство может быть, а маршрута в таблице не быть, и тогда
-			// помеченный трафик уходит в blackhole.
+			// Route attachment is a separate thing from the device existing:
+			// the device can be there while the route in the table is not,
+			// and then marked traffic falls into the blackhole.
 			if (dev_exists) {
 				let attached = index(sh_out('ip route show table ' +
 					shq(first(rec, 'network.table', '880'))).out, 'dev ' + dev) >= 0;
@@ -436,7 +442,7 @@ return {
 				fwz ? 'loaded in fw4' : 'not in the live ruleset',
 				fwz ? '' : 'Run /etc/init.d/firewall reload — traffic into the tunnel is dropped without the zone.');
 
-			// --- Сеть ---
+			// --- Network ---
 			if (length(addrs)) {
 				let h = endpoint_host(addrs[0]);
 				let p = sh_out('ping -c 2 -W 2 ' + shq(h));
@@ -484,23 +490,25 @@ return {
 				ahead: false
 			};
 
-			// Клиент печатает "trusttunnel_client 1.0.49".
+			// The client prints "trusttunnel_client 1.0.49".
 			if (access(CLIENT)) {
 				let r = sh_out(shq(CLIENT) + ' --version');
 				let m = match(trim(r.out), /([0-9]+\.[0-9]+\.[0-9]+[^ \t\n]*)/);
 				if (m) out.client = m[1];
 			}
 
-			// apk печатает "luci-app-trusttunnel-lite-1.0.0-r1 noarch {...} [installed]".
-			// Версия берётся из имени пакета, поэтому шаблон захватывает всё
-			// между именем и первым пробелом, включая суффикс -rN.
+			// apk prints "luci-app-trusttunnel-lite-1.0.0-r1 noarch {...} [installed]".
+			// The version comes from the package name, so the pattern captures
+			// everything between the name and the first space, including the
+			// -rN suffix.
 			let rp = sh_out('apk list -I luci-app-trusttunnel-lite');
 			let mp = match(trim(rp.out), /luci-app-trusttunnel-lite-([^ \t\n]+)/);
 			if (mp) out.package = mp[1];
 
-			// Сетевая часть: последний релиз нашего репозитория, с кэшем на
-			// диске. При недоступности GitHub отдаём кэш с пометкой stale, а
-			// не ошибку — знать свою версию полезно и без сети.
+			// The network part: the latest release of our repository, with a
+			// disk cache. When GitHub is unreachable we serve the cache with
+			// the stale flag instead of an error — knowing one's own version
+			// is useful even without the network.
 			let st = stat(VERSION_CACHE);
 			let now = time();
 			let fresh = st && (now - st.mtime) < RELEASE_TTL;
@@ -514,14 +522,16 @@ return {
 					out.checked_at = c.checked_at;
 				} catch (e) { }
 
-				// Кэш, в котором «последний релиз» СТАРШЕ установленного
-				// пакета, описывает состояние, которого не бывает: обновиться
-				// до версии, которой ещё нет в релизах, обычному роутеру
-				// неоткуда. Значит кэш отстал, и держаться за него нельзя —
-				// иначе страница пишет «актуальная версия» ровно тому, кто
-				// отстал на несколько выпусков. Ровно так и вышло на живом
-				// роутере: кэш с v1.0.6 при установленном 1.0.8-r1 прятал
-				// вышедший 1.0.9. Обнуляем tag и идём в сеть, не дожидаясь TTL.
+				// A cache whose "latest release" is OLDER than the installed
+				// package describes a state that cannot exist: an ordinary
+				// router has nowhere to update from to a version not yet in
+				// the releases. So the cache has fallen behind and must not
+				// be held on to — otherwise the page tells "up to date"
+				// exactly to the one who is several releases behind. That is
+				// precisely what happened on a live router: a cache with
+				// v1.0.6 with 1.0.8-r1 installed hid the released 1.0.9. We
+				// null the tag and go to the network without waiting for the
+				// TTL.
 				if (tag != null && out.package != null &&
 				    vercmp(tag, out.package) < 0) {
 					tag = null;
@@ -558,12 +568,13 @@ return {
 			if (tag != null && out.package != null) {
 				let c = vercmp(tag, out.package);
 				out.update_available = c > 0;
-				// Установленное новее последнего релиза бывает у сборки из
-				// main (артефакт CI) — и у отставшего кэша, который не удалось
-				// обновить, потому что GitHub недоступен. В обоих случаях
-				// «актуальная версия» — неверный ответ: в первом он верен лишь
-				// случайно, во втором просто ложен. Признак отдаётся отдельно,
-				// чтобы интерфейс сказал, что видит на самом деле.
+				// An installed version newer than the latest release happens
+				// with a build from main (a CI artifact) — and with a stale
+				// cache that could not be refreshed because GitHub is
+				// unreachable. In both cases "up to date" is the wrong
+				// answer: in the first it is right only by accident, in the
+				// second it is simply false. The flag is returned separately
+				// so the UI can say what it actually sees.
 				out.ahead = c < 0;
 			}
 			return out;
@@ -577,27 +588,31 @@ return {
 			if (!length(trim(text)))
 				return { error: 'configuration text is empty' };
 
-			// Оба файла несут учётные данные endpoint (в т.ч. пароль) в
-			// открытом виде: имена непредсказуемые, а не фиксированные, и
-			// права 0600, а не то что дал умолчальный umask. inp пишем сами
-			// через write_secret_tmp(); outp создаёт setup_wizard, поэтому
-			// права на него доводим chmod'ом сразу после вызова, до чтения.
+			// Both files carry endpoint credentials (including the password)
+			// in the clear: the names are unpredictable rather than fixed,
+			// and the permissions are 0600 rather than whatever the default
+			// umask gave. inp is written by ourselves via
+			// write_secret_tmp(); outp is created by setup_wizard, so its
+			// permissions are fixed with chmod right after the call, before
+			// reading.
 			let outp = tmp_path('import-out');
 			let wiz = '/opt/trusttunnel_client/setup_wizard';
 			if (!access(wiz))
 				return { error: 'setup_wizard is not installed; run install.sh' };
 
-			// Сервер выдаёт конфигурацию в ДВУХ видах, и setup_wizard принимает
-			// их РАЗНЫМИ, взаимоисключающими флагами: файл конфига через
-			// --endpoint_config, ссылку tt:// через --deeplink. Если скормить
-			// ссылку как файл, вендор падает с "TOML parse error at line 1",
-			// файла настроек не создаёт, и импорт молча ничего не заполняет.
+			// The server hands out the configuration in TWO forms, and
+			// setup_wizard accepts them with DIFFERENT, mutually exclusive
+			// flags: the config file via --endpoint_config, the tt:// link
+			// via --deeplink. Feeding the link as a file makes the vendor
+			// fail with "TOML parse error at line 1", no settings file is
+			// created, and the import silently fills nothing.
 			let trimmed = trim(text);
 			let inp = null;
 			let cmd;
 			if (wildcard(trimmed, 'tt://*')) {
-				// Ссылка идёт аргументом, а не файлом; shq() обязателен —
-				// в ней встречаются символы, значимые для оболочки.
+				// The link goes as an argument, not a file; shq() is
+				// mandatory — it contains characters significant to the
+				// shell.
 				cmd = wiz + ' --mode non-interactive --deeplink ' + shq(trimmed) +
 					' --settings ' + shq(outp);
 			} else {
@@ -611,10 +626,11 @@ return {
 			if (inp) unlink(inp);
 			unlink(outp);
 			if (r.code != 0 || !length(produced)) {
-				// setup_wizard сообщает об ошибках дампом паники Rust. Целиком
-				// его показывать незачем: строка "thread ... panicked at" и
-				// совет про RUST_BACKTRACE ничего не говорят администратору
-				// роутера, а суть лежит между ними. Оставляем содержательное.
+				// setup_wizard reports errors as a Rust panic dump. Showing
+				// it whole is pointless: the "thread ... panicked at" line
+				// and the RUST_BACKTRACE advice say nothing to a router
+				// administrator, and the substance lies between them. We
+				// keep the meaningful part.
 				let msg = [];
 				for (let line in split(r.out, "\n")) {
 					line = trim(line);
@@ -642,10 +658,11 @@ return {
 						push(res.addresses, replace(trim(a), /"/g, ''));
 				}
 			}
-			// Если setup_wizard отработал, но НИ ОДНОГО поля распознать не
-			// удалось, это отказ, а не успех. Молчаливое "импортировано" с
-			// пустыми полями — худший из возможных ответов: пользователь видит
-			// перезагрузку страницы и делает вывод, что сломан импорт целиком.
+			// If setup_wizard ran but NONE of the fields could be
+			// recognised, that is a failure, not a success. A silent
+			// "imported" with empty fields is the worst possible answer:
+			// the user sees the page reload and concludes the import is
+			// broken altogether.
 			if (!res.hostname && !res.username && !res.password &&
 			    !res.certificate && !length(res.addresses))
 				return { error: 'setup_wizard produced no recognisable endpoint fields' };
