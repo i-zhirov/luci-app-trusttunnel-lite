@@ -41,25 +41,13 @@ jobs:
           - arch: x86-64-24.10.8
             ext: ipk
             publish: false
-          # The package architecture is all/noarch: the build runs on x86_64,
-          # but the artifacts install on ANY OpenWrt architecture. The only
-          # real architecture constraint is the client binary, which
-          # install.sh checks against uname -m (x86_64, aarch64, armv7l/
-          # armv8l, mips, mipsel). These jobs do not publish to the release
-          # and only prove that the noarch build passes on the SDK of each
-          # client architecture family: aarch64, armv7 and mips/mipsel.
-          - arch: aarch64_generic-25.12.5
-            ext: apk
-            publish: false
-          - arch: aarch64_generic-22.03.7
-            ext: ipk
-            publish: false
-          - arch: arm_cortex-a7-22.03.7
-            ext: ipk
-            publish: false
-          - arch: mips_24kc-22.03.7
-            ext: ipk
-            publish: false
+          # No builds for other client architectures on purpose: the package
+          # is noarch (LUCI_PKGARCH:=all), so the built artifact is identical
+          # on every SDK — the axis that actually changes the build is the
+          # OpenWrt VERSION (luci.mk, opkg vs apk, findrev versioning), and it
+          # is covered by the four x86-64 branches above. The client binary is
+          # not part of the package at all: install.sh downloads it at install
+          # time and checks it against uname -m itself.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -145,10 +133,9 @@ jobs:
           if-no-files-found: ignore
 
       # Only the two canonical jobs write to the release: 25.12 (apk) and
-      # 22.03 (ipk). The other branches and architectures build and verify
-      # the package but are not published — otherwise identical .ipk
-      # filenames (noarch builds on different SDKs produce the same file)
-      # would overwrite each other.
+      # 22.03 (ipk). The other branches build and verify the package but are
+      # not published — otherwise identical .ipk filenames (noarch builds on
+      # different SDKs produce the same file) would overwrite each other.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/') && matrix.publish
         uses: softprops/action-gh-release@v3
