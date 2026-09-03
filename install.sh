@@ -1,5 +1,5 @@
 #!/bin/sh
-# Установщик luci-app-trusttunnel-lite для OpenWrt 25.12+.
+# Installer for luci-app-trusttunnel-lite for OpenWrt 25.12+.
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
 set -e
 
@@ -10,9 +10,9 @@ CLIENT_INSTALLER=https://raw.githubusercontent.com/TrustTunnel/TrustTunnelClient
 say()  { printf '%s\n' "$*"; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# --- Проверки окружения -------------------------------------------------------
+# --- Environment checks ----------------------------------------------------
 [ -f /etc/openwrt_release ] || die "this script is for OpenWrt only"
-# Файл существует только на роутере, линтеру его не видно.
+# The file exists only on a router; the linter cannot see it.
 # shellcheck disable=SC1091
 . /etc/openwrt_release
 
@@ -24,27 +24,29 @@ esac
 
 command -v apk >/dev/null 2>&1 || die "apk not found; this package targets OpenWrt 25.12+"
 
-# Архитектура проверяется здесь, ДО установки чего бы то ни было: раньше эта
-# проверка стояла после установки пакета luci-app-trusttunnel-lite и клиента, и
-# неподдерживаемая платформа обнаруживалась уже после того как в системе
-# появлялась запись в меню LuCI и служба без работающего бинарника клиента —
-# то есть отказ оставлял после себя мёртвый огрызок установки вместо чистого
-# выхода.
+# The architecture is checked here, BEFORE anything is installed: the check
+# used to run after installing the luci-app-trusttunnel-lite package and
+# the client, so an unsupported platform was only discovered after a LuCI
+# menu entry and a service without a working client binary had appeared in
+# the system — the failure left a dead stub of an installation behind
+# instead of exiting cleanly.
 say "== Checking architecture"
-# Проверяется `uname -m`, а НЕ `apk --print-arch`. Это принципиально: сам пакет
-# архитектурно-независим (PKGARCH:=all, внутри только скрипты), а ограничение
-# идёт от бинарника клиента, который ставит установщик вендора — и он выбирает
-# сборку именно по `uname -m`. Это разные пространства имён, и расхождение не
-# теоретическое: пакетные цели OpenWrt `arm_*` включают устройства на ARMv5 и
-# ARMv6 (arm_arm926ej-s, arm_xscale, arm_arm1176jzf-s_vfp), где `uname -m`
-# отдаёт armv5tel или armv6l, а вендор принимает только armv7l и armv8l.
-# Прежняя проверка по `arm_*` такие роутеры ПРОПУСКАЛА, пакет ставился, и
-# отказ приходил уже от вендора — то есть после установки, оставляя пункт в
-# меню и службу без клиента.
+# `uname -m` is checked, NOT `apk --print-arch`. This is fundamental: the
+# package itself is architecture-independent (PKGARCH:=all, scripts only),
+# while the constraint comes from the client binary installed by the vendor
+# installer — which picks its build exactly by `uname -m`. These are
+# different namespaces, and the divergence is not theoretical: the OpenWrt
+# package targets `arm_*` include ARMv5 and ARMv6 devices
+# (arm_arm926ej-s, arm_xscale, arm_arm1176jzf-s_vfp), where `uname -m`
+# reports armv5tel or armv6l, while the vendor accepts only armv7l and
+# armv8l. The former `arm_*` check let such routers THROUGH, the package
+# installed, and the refusal came from the vendor — after installation,
+# leaving a menu entry and a service without a client.
 #
-# Список сверен с scripts/install.sh вендора: принимаются x86_64, armv7,
-# aarch64, mips, mipsel. Порядок байт для mips вендор определяет сам, поэтому
-# здесь достаточно пропустить оба варианта.
+# The list is cross-checked against the vendor's scripts/install.sh:
+# x86_64, armv7, aarch64, mips, mipsel are accepted. The mips byte order
+# is resolved by the vendor itself, so passing both variants here is
+# enough.
 arch=$(uname -m 2>/dev/null)
 case "$arch" in
 	x86_64|x86-64|x64|amd64) say "   CPU: x86_64" ;;
@@ -58,7 +60,7 @@ say "== Installing dependencies"
 apk update
 apk add kmod-tun ip-full curl ca-bundle
 
-# --- Пакет --------------------------------------------------------------------
+# --- Package ------------------------------------------------------------------
 say "== Fetching the latest package release"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
@@ -66,10 +68,10 @@ trap 'rm -rf "$tmp"' EXIT INT TERM
 curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" > "$tmp/release.json" \
 	|| die "cannot reach the GitHub API for $REPO"
 
-# Аргумент подставляется в выражение sed БЕЗ экранирования регекс-метасимволов,
-# поэтому безопасен только для тех буквальных строк, которыми эта функция
-# вызывается ниже ('luci-app-trusttunnel-lite', 'luci-i18n-trusttunnel-lite') —
-# не для произвольного ввода.
+# The argument is substituted into the sed expression WITHOUT escaping
+# regex metacharacters, so it is only safe for the literal strings this
+# function is called with below ('luci-app-trusttunnel-lite',
+# 'luci-i18n-trusttunnel-lite') — not for arbitrary input.
 pick_asset() {
 	sed -n 's/.*"browser_download_url": *"\([^"]*'"$1"'[^"]*\.apk\)".*/\1/p' \
 		"$tmp/release.json" | head -n1
@@ -78,32 +80,34 @@ pick_asset() {
 url=$(pick_asset 'luci-app-trusttunnel-lite')
 [ -n "$url" ] || die "cannot find a luci-app-trusttunnel-lite .apk in the latest release of $REPO"
 
-# luci.mk собирает из po/ru ОТДЕЛЬНЫЙ пакет luci-i18n-trusttunnel-lite-ru. Без
-# него интерфейс остаётся англоязычным, хотя перевод в репозитории есть,
-# поэтому его тоже надо забрать. Имя выводится из LUCI_BASENAME, то есть из
-# имени каталога пакета.
+# luci.mk builds a SEPARATE luci-i18n-trusttunnel-lite-ru package from
+# po/ru. Without it the UI stays English even though the translation exists
+# in the repository, so it has to be picked up too. The name derives from
+# LUCI_BASENAME, i.e. from the package directory name.
 i18n_url=$(pick_asset 'luci-i18n-trusttunnel-lite')
 
 say "   $url"
 curl -fsSL -o "$tmp/pkg.apk" "$url" || die "failed to download $url"
 if [ -n "$i18n_url" ]; then
 	say "   $i18n_url"
-	# Отказ НЕ фатален, как и отказ установки этого пакета ниже: релиз без
-	# перевода — ухудшенный, а не сломанный, и прерывать из-за него уже
-	# скачанный основной пакет неправильно.
+	# The failure is NOT fatal, same as the failure of installing this
+	# package below: a release without a translation is degraded, not
+	# broken, and aborting the already-downloaded main package because of
+	# it would be wrong.
 	curl -fsSL -o "$tmp/i18n.apk" "$i18n_url" \
 		|| { rm -f "$tmp/i18n.apk"; say "warning: could not download the translation package; the interface will be English"; }
 else
 	say "   note: no translation package in this release; the interface will be English"
 fi
 
-# Служба останавливается перед подменой файлов: иначе работающий клиент
-# продолжит крутить старую конфигурацию.
-# Запомнить, работала ли служба: в конце её надо вернуть в прежнее состояние.
-# Просто запускать в конце нельзя — на ПЕРВОЙ установке служба стартовать не
-# должна, endpoint ещё не настроен. Просто не запускать тоже нельзя: тогда
-# пользователь с работающим туннелем обновляется и остаётся без туннеля до
-# ручного вмешательства, потому что `apk add` наш сервис не поднимает.
+# The service is stopped before the files are replaced: otherwise the
+# running client keeps spinning the old configuration.
+# Remember whether the service was running: it must be restored to its
+# previous state at the end. Simply starting it at the end is wrong — on
+# the FIRST install the service must not start, the endpoint is not
+# configured yet. Simply not starting it is also wrong: then a user with a
+# working tunnel updates and stays without a tunnel until manual
+# intervention, because `apk add` does not bring our service up.
 was_running=0
 if [ -x /etc/init.d/trusttunnel ]; then
 	/etc/init.d/trusttunnel running >/dev/null 2>&1 && was_running=1
@@ -118,26 +122,29 @@ if [ -f "$tmp/i18n.apk" ]; then
 		|| say "warning: the translation package failed to install; the interface will be English"
 fi
 
-# --- Бинарь клиента -----------------------------------------------------------
-# $arch уже проверен и напечатан выше, до установки чего бы то ни было.
+# --- Client binary -----------------------------------------------------------
+# $arch has already been checked and printed above, before anything was
+# installed.
 say "== Installing the TrustTunnel client binary"
 mkdir -p "$CLIENT_DIR"
-# Флаг -a y обязателен. Скрипт вендора задаёт вопросы чтением из /dev/tty, и
-# один из них — «убедитесь, что клиент остановлен, продолжать?» — возникает
-# при ПОВТОРНОЙ установке, то есть на обычном пути обновления. Без флага
-# установщик там повиснет, а в неинтерактивном окружении (запуск из скрипта
-# или из cron) чтение из /dev/tty ещё и недоступно вовсе. Ответ «да» здесь
-# правдив: службу мы остановили выше, до подмены бинарника.
+# The -a y flag is mandatory. The vendor script asks questions by reading
+# from /dev/tty, and one of them — "make sure the client is stopped,
+# continue?" — arises on a RE-install, i.e. on the ordinary update path.
+# Without the flag the installer hangs there, and in a non-interactive
+# environment (run from a script or cron) reading from /dev/tty is not
+# available at all. Answering "yes" here is truthful: we stopped the
+# service above, before replacing the binary.
 curl -fsSL "$CLIENT_INSTALLER" | sh -s - -a y -o "$CLIENT_DIR"
 [ -x "$CLIENT_DIR/trusttunnel_client" ] || die "client binary was not installed"
 
 say "== Restarting LuCI backend"
 /etc/init.d/rpcd restart >/dev/null 2>&1 || true
 
-# Вернуть службу в прежнее состояние. Запускаем только если она РАБОТАЛА до
-# установки: `apk add` наш сервис не поднимает, поэтому без этого пользователь
-# с работающим туннелем обновляется и остаётся без туннеля. Безусловный запуск
-# тоже неверен — на первой установке endpoint ещё не настроен.
+# Restore the service to its previous state. Start only if it was RUNNING
+# before the install: `apk add` does not bring our service up, so without
+# this a user with a working tunnel updates and stays without a tunnel. An
+# unconditional start is wrong too — on the first install the endpoint is
+# not configured yet.
 if [ "$was_running" = "1" ]; then
 	say "== Starting the service back up"
 	/etc/init.d/trusttunnel start \
