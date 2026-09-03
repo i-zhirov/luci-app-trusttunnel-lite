@@ -3,21 +3,21 @@
 *.apk
 *.tar.gz
 
-# Локальная сборка в SDK: артефакты и вспомогательный скрипт.
-# Воспроизводимая сборка описана в .github/workflows/release.yml.
+# Local build in the SDK: artifacts and a helper script.
+# The reproducible build is described in .github/workflows/release.yml.
 .build-out/
 
-# Локальные настройки инструментов и рабочее пространство агентов: настройки
-# конкретной машины и промежуточные отчёты, которым не место в истории.
+# Local tool settings and agent workspaces: machine-specific settings and
+# intermediate reports that have no place in history.
 .claude/
 .superpowers/
 
-# Пользовательская документация живёт в корне репозитория и отслеживается:
-# README.md. Если сюда добавится ещё один пользовательский документ, его место
-# тоже в корне — иначе он молча выпадет из репозитория, а ссылка на него из
-# README окажется битой.
+# User documentation lives in the repository root and is tracked: README.md.
+# If another user-facing document is added here, its place is also in the
+# root — otherwise it will silently fall out of the repository and a link to
+# it from README will end up broken.
 
-# Мусор редакторов и файловых менеджеров.
+# Editor and file manager junk.
 .vscode/
 .idea/
 *.swp
@@ -25,8 +25,8 @@
 .DS_Store
 Thumbs.db
 
-# Скачанные списки домены и локальные временные файлы, если кто-то
-# запустит генераторы прямо в дереве репозитория.
+# Downloaded domain lists and local temporary files, in case someone
+# runs the generators right inside the repository tree.
 /lists/
 *.tsv.tmp
 *.log

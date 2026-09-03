@@ -5,15 +5,16 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
-# Без этого блока публикация релиза падает с 403 "Resource not accessible by
-# integration": GITHUB_TOKEN по умолчанию выдаётся только на чтение, а создание
-# релиза требует записи в contents. Проверено на живом прогоне по тегу v1.0.0 —
-# всё собралось и загрузилось, упал ровно последний шаг.
+# Without this block publishing the release fails with 403 "Resource not
+# accessible by integration": GITHUB_TOKEN is granted read-only by default,
+# while creating a release requires write access to contents. Verified on a live
+# run against tag v1.0.0 — everything built and uploaded, exactly the last step
+# failed.
 #
-# Право объявлено ЗДЕСЬ, а не переключателем в настройках репозитория: так оно
-# переезжает вместе с кодом (форк, перенос, восстановление из клона) и видно
-# при чтении воркфлоу. Выдаётся минимально необходимое — только contents:write,
-# не write-all.
+# The right is declared HERE rather than with a toggle in the repository
+# settings: this way it travels with the code (fork, move, restore from clone)
+# and is visible when reading the workflow. Only the minimum needed is granted —
+# just contents:write, not write-all.
 permissions:
   contents: write
 
@@ -24,47 +25,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # Каталог артефактов отделён от фида НАМЕРЕННО: действие переносит
-      # собранный bin/ в ARTIFACTS_DIR, а фидом у нас теперь служит весь
-      # репозиторий — без этого разделения сотня чужих .apk высыпалась бы
-      # прямо в рабочее дерево. Каталог создаётся заранее: действие делает
-      # `chown` на оба пути ДО запуска контейнера и на отсутствующем падает.
+      # The artifacts directory is separated from the feed DELIBERATELY: the
+      # action moves the built bin/ into ARTIFACTS_DIR, while our feed is now
+      # the whole repository — without this separation a hundred foreign .apk
+      # files would be dumped straight into the working tree. The directory is
+      # created in advance: the action `chown`s both paths BEFORE starting the
+      # container and fails on a missing one.
       - name: Prepare the artifacts directory
         run: mkdir -p out
 
-      # Сборка отдана штатному действию OpenWrt: оно поднимает контейнер SDK,
-      # подкладывает репозиторий как фид и собирает пакет. Взамен ста сорока
-      # строк ручной оркестрации мы получаем ещё и `make package/<pkg>/check`
-      # — проверку метаданных и хешей, которой у ручного варианта не было.
+      # The build is delegated to the standard OpenWrt action: it brings up the
+      # SDK container, feeds the repository in as a feed, and builds the
+      # package. In exchange for a hundred and forty lines of manual
+      # orchestration we also get `make package/<pkg>/check` — the metadata and
+      # hash check that the manual variant did not have.
       #
-      # Цена перехода — время: staging_dir и build_dir живут внутри контейнера
-      # и кэшу actions/cache недоступны, поэтому зависимости (luci-base, ucode,
-      # curl, тулчейн) собираются каждый раз заново. По замерам это ничего не
-      # стоит: релизы 1.0.5–1.0.9 с ручным кэшем занимали 12 м 09 с — 12 м 36 с,
-      # первый прогон на действии — 11 м 13 с. Кэш и раньше почти не срабатывал.
+      # The price of the switch is time: staging_dir and build_dir live inside
+      # the container and are inaccessible to actions/cache, so dependencies (luci-base, ucode, curl, the toolchain) are built from
+      # scratch every time. By measurements it costs nothing: releases
+      # 1.0.5–1.0.9 with the manual cache took 12 m 09 s – 12 m 36 s, the first
+      # run on the action — 11 m 13 s. The cache barely hit even before.
       - name: Build package via OpenWrt SDK Action
         uses: openwrt/gh-action-sdk@v7
         env:
           ARCH: x86-64-25.12.5
           FEEDNAME: ttowrt
-          # Фидом объявлен ВЕСЬ репозиторий, а не каталог packages/, и путь
-          # обязан быть АБСОЛЮТНЫМ. Две разные причины, обе проверены.
+          # The feed is the WHOLE repository, not the packages/ directory, and
+          # the path MUST be ABSOLUTE. Two different reasons, both verified.
           #
-          # Абсолютный — потому что действие подставляет это значение прямо в
-          # `docker run -v <FEED_DIR>:/feed`, а docker трактует относительное
-          # значение не как каталог, а как ИМЯ ТОМА: в контейнер приезжает
-          # пустой том, фид выходит пустым, и сборка падает на
-          # `make package/luci-app-trusttunnel-lite/download`. Проверено локально:
-          # `docker run -v packages:/feed alpine ls /feed` показывает пустоту.
+          # Absolute — because the action substitutes this value directly into
+          # `docker run -v <FEED_DIR>:/feed`, and docker treats a relative
+          # value not as a directory but as a VOLUME NAME: an empty volume
+          # arrives in the container, the feed comes out empty, and the build
+          # fails at `make package/luci-app-trusttunnel-lite/download`. Verified
+          # locally: `docker run -v packages:/feed alpine ls /feed` shows
+          # emptiness.
           #
-          # Весь репозиторий — потому что вместе с packages/ в контейнер обязан
-          # попасть .git. Версию пакета перевода luci.mk берёт из `git log -1`
-          # (findrev в luci.mk), и без репозитория срабатывает запасная ветка
-          # с меткой времени: вместо 26.238.08051~9f6fb1a получается
-          # 0.260826.21528. Это не косметика — apk видит в такой версии
-          # ПОНИЖЕНИЕ и пишет «Downgrading luci-i18n-trusttunnel-lite-ru
-          # (26.237.58633~00f8120 -> 0.260826.21528)». Проверено на живом
-          # роутере через `apk add --simulate`.
+          # The whole repository — because .git must get into the container
+          # together with packages/. luci.mk takes the translation package
+          # version from `git log -1` (findrev in luci.mk), and without the
+          # repository a fallback timestamp branch kicks in: instead of
+          # 26.238.08051~9f6fb1a you get 0.260826.21528. This is not cosmetics —
+          # apk sees a DOWNGRADE in such a version and writes "Downgrading
+          # luci-i18n-trusttunnel-lite-ru (26.237.58633~00f8120 ->
+          # 0.260826.21528)". Verified on a live router via `apk add --simulate`.
           FEED_DIR: ${{ github.workspace }}
           ARTIFACTS_DIR: ${{ github.workspace }}/out
           PACKAGES: luci-app-trusttunnel-lite
@@ -72,13 +76,13 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          # Сборка производит ДВА пакета: сам luci-app и пакет перевода,
-          # который luci.mk генерирует из po/ru как luci-i18n-trusttunnel-lite-ru.
+          # The build produces TWO packages: luci-app itself and the translation
+          # package that luci.mk generates from po/ru as luci-i18n-trusttunnel-lite-ru.
           find out/bin/ -name 'luci-app-trusttunnel-lite*.apk' -exec cp {} dist/ \;
           find out/bin/ -name 'luci-i18n-trusttunnel-*.apk' -exec cp {} dist/ \;
           ls -la dist/
-          # Отсутствие любого из двух пакетов — ошибка сборки, и заметить её
-          # надо здесь, а не у пользователя.
+          # A missing of either of the two packages is a build error, and it
+          # must be noticed here, not by the user.
           ls dist/luci-app-trusttunnel-lite*.apk >/dev/null
           ls dist/luci-i18n-trusttunnel-*.apk >/dev/null
 
@@ -88,11 +92,11 @@ jobs:
           name: package
           path: dist/*
 
-      # Ручной вариант собирал с V=s и печатал ход сборки прямо в журнал шага;
-      # действие этого не делает, зато складывает логи в logs/ (BUILD_LOG=1 у
-      # него по умолчанию) и переносит их в рабочий каталог вместе с bin/.
-      # Без этого шага упавшая сборка не оставляет ничего, кроме последней
-      # строки make.
+      # The manual variant built with V=s and printed the build progress right
+      # into the step log; the action does not do that, but it stores logs in
+      # logs/ (BUILD_LOG=1 is its default) and moves them into the working
+      # directory together with bin/. Without this step a failed build leaves
+      # nothing but the last line of make.
       - name: Upload build logs
         if: failure()
         uses: actions/upload-artifact@v7

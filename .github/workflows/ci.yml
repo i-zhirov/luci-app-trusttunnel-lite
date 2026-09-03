@@ -3,9 +3,8 @@ name: CI
 on:
   push:
     branches: [ main ]
-    # Совпадает с триггером release.yml: без этого тег может уйти в релиз
-    # без единого прогона тестов, потому что push тега сам по себе CI не
-    # запускал.
+    # Matches the release.yml trigger: without it a tag could go into a release
+    # without a single test run, because a tag push by itself did not trigger CI.
     tags: [ 'v*' ]
   pull_request:
 
@@ -16,15 +15,16 @@ jobs:
       - uses: actions/checkout@v7
 
 
-      # Дефект, из-за которого пакет ставился, но служба не работала: все
-      # скрипты уехали в .apk с режимом 100644. luci.mk копирует root/ через
-      # `cp -pR`, то есть сохраняет права источника, а разработка шла на
-      # Windows, где бита исполнения нет. На роутере это выглядело как «служба
-      # не запускается» БЕЗ ЕДИНОЙ СТРОКИ в журнале — procd просто не может
-      # выполнить файл, и диагностировать нечем.
+      # Defect that made the package install but the service not work: all
+      # scripts went into the .apk with mode 100644. luci.mk copies root/ with
+      # `cp -pR`, i.e. it keeps the source permissions, and development was done
+      # on Windows, where there is no executable bit. On the router this looked
+      # like "service does not start" WITHOUT A SINGLE LINE in the log — procd
+      # just cannot execute the file, and there is nothing to diagnose.
       #
-      # Режимы правятся и в Makefile (Build/Compile), но проверка здесь нужна
-      # отдельно: она ловит причину в индексе, а не последствие в сборке.
+      # Modes are also fixed in the Makefile (Build/Compile), but this check is
+      # needed separately: it catches the cause in the index, not the effect in
+      # the build.
       - name: Executable bits
         run: |
           need="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
@@ -48,15 +48,17 @@ jobs:
       - name: Unit tests
         run: sh tests/run.sh
 
-      # Версия ЗАКРЕПЛЕНА, и это не педантизм: apt-версия менялась вместе с
-      # образом раннера, а каждый выпуск shellcheck добавляет новые проверки.
-      # Ровно так CI и упал впервые — на SC2317, которого в прежней версии не
-      # существовало, при полностью неизменном коде. Незакреплённый линтер
-      # означает сборку, которая ломается сама по себе в произвольный момент.
+      # The version is PINNED, and it is not pedantry: the apt version changed
+      # along with the runner image, and every shellcheck release adds new
+      # checks. That is exactly how CI first broke — on SC2317, which did not
+      # exist in the previous version, with completely unchanged code. An
+      # unpinned linter means a build that breaks on its own at an arbitrary
+      # moment.
       #
-      # Контейнер, а не apt: тот же образ запускается локально одной командой,
-      # то есть находки воспроизводятся до пуша, а не обнаруживаются в CI.
-      # Обновление версии — осознанный шаг с проверкой, а не побочный эффект.
+      # A container, not apt: the same image runs locally with a single command,
+      # so findings reproduce before the push instead of being found in CI.
+      # Updating the version is a deliberate step done with verification, not a
+      # side effect.
       - name: Shellcheck
         run: |
           docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh \
@@ -72,18 +74,19 @@ jobs:
       - name: Shell syntax of the init script
         run: sh -n packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
 
-      # Проверка синтаксиса ucode (`uc -c` в release.yml) НЕ ловит отсутствующий
-      # импорт: обращение к необъявленной функции — ошибка времени выполнения, а
-      # не разбора. Именно так `rand()` из модуля math, использованный без
-      # импорта, сломал сразу импорт конфига и проверку домена, и не был замечен
-      # ни одной проверкой. Этот шаг сверяет фактически вызванные функции со
-      # списком тех, что живут в модулях, а не в ядре ucode.
+      # The ucode syntax check (`uc -c` in release.yml) does NOT catch a missing
+      # import: calling an undeclared function is a runtime error, not a parse
+      # one. That is how `rand()` from the math module, used without an import,
+      # broke both the config import and the domain check at once and was not
+      # noticed by any check. This step cross-checks the functions actually
+      # called against the list of those living in modules rather than in the
+      # ucode core.
       - name: ucode module imports
         run: |
           f=packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
-          # Функции, которых НЕТ в ядре ucode: каждая требует import из модуля.
-          # Список намеренно короткий — только то, что реально может понадобиться
-          # этому бэкенду; расширять по мере надобности.
+          # Functions that are NOT in the ucode core: each one requires an
+          # import from a module. The list is intentionally short — only what
+          # this backend can actually need; extend as necessary.
           fail=0
           for pair in \
             'math:rand' 'math:srand' 'math:sqrt' 'math:pow' 'math:abs' \
@@ -92,7 +95,7 @@ jobs:
             'ubus:connect' 'uci:cursor'
           do
             mod=${pair%%:*}; fn=${pair##*:}
-            # Вызов функции: имя со скобкой, не как часть другого слова.
+            # A function call: the name with a parenthesis, not part of another word.
             if grep -qE "(^|[^A-Za-z0-9_.])${fn}[[:space:]]*\(" "$f"; then
               if ! grep -qE "^import[[:space:]]*\{[^}]*\b${fn}\b[^}]*\}[[:space:]]*from[[:space:]]*'${mod}'" "$f"; then
                 echo "::error file=$f::${fn}() is used but not imported from '${mod}' — this fails at runtime, not at parse time"
@@ -103,26 +106,26 @@ jobs:
           [ "$fail" = 0 ] && echo "every module function used is imported"
           exit "$fail"
 
-      # Проверка синтаксиса ucode. Раньше её делал release.yml, собирая
-      # host-ucode внутри контейнера SDK; переход на openwrt/gh-action-sdk эту
-      # возможность отнял — сборка целиком уехала внутрь действия. Без проверки
-      # синтаксическая ошибка в бэкенде уезжает в релиз незамеченной: это
-      # тысяча строк в ОДНОМ файле, который rpcd загружает целиком, и ошибка
-      # разбора выключает не одну функцию, а весь пакет.
+      # The ucode syntax check. Previously release.yml did it by building
+      # host-ucode inside the SDK container; the switch to openwrt/gh-action-sdk
+      # took that ability away — the whole build moved inside the action.
+      # Without a check, a syntax error in the backend goes into a release
+      # unnoticed: it is a thousand lines in ONE file that rpcd loads entirely,
+      # and a parse error disables not one function but the whole package.
       #
-      # Проверка переехала СЮДА, а не осталась в релизной сборке, и от этого
-      # стала строже: теперь она идёт на каждый PR, а не раз в релиз.
+      # The check moved HERE instead of staying in the release build, and this
+      # made it stricter: it now runs on every PR rather than once per release.
       #
-      # Компилятор собирается из исходников с модулями fs и math — ровно теми,
-      # что импортирует бэкенд. Это не украшательство: `ucode -c` разрешает
-      # импорты во время компиляции, и без math.so проверка падает прямо на
-      # строке `import { rand, srand } from 'math'` — то есть отвергает
-      # заведомо исправный файл. Проверено: без -DMATH_SUPPORT=ON шаг падает
-      # с кодом 255 на строке 10.
+      # The compiler is built from sources with the fs and math modules — exactly
+      # the ones the backend imports. This is not decoration: `ucode -c` resolves
+      # imports at compile time, and without math.so the check fails right on
+      # the line `import { rand, srand } from 'math'` — i.e. it rejects an
+      # obviously valid file. Verified: without -DMATH_SUPPORT=ON the step fails
+      # with exit code 255 on line 10.
       #
-      # Версия закреплена по той же причине, что и версия shellcheck:
-      # незакреплённый инструмент ломает сборку сам по себе в произвольный
-      # момент, при полностью неизменном коде.
+      # The version is pinned for the same reason as the shellcheck version:
+      # an unpinned tool breaks the build on its own at an arbitrary moment,
+      # with completely unchanged code.
       - name: ucode syntax
         run: |
           sudo apt-get update -qq
@@ -138,8 +141,8 @@ jobs:
           "$uc" -L '/tmp/ucode/build/*.so' -c \
             packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
 
-          # Контроль самой проверки: компилятор, принимающий заведомо битый
-          # файл, не проверяет ничего, а зелёный шаг при этом обманывает.
+          # A control on the check itself: a compiler that accepts an obviously
+          # broken file checks nothing, and a green step would be lying.
           printf 'let x = ;\n' > /tmp/broken.uc
           if "$uc" -L '/tmp/ucode/build/*.so' -c /tmp/broken.uc 2>/dev/null; then
             echo "::error::the syntax check accepts broken input and proves nothing"
@@ -154,17 +157,17 @@ jobs:
           done
 
 
-      # Тот же класс ошибки, что и у импортов ucode, и ловится он так же
-      # плохо: `node --check` проверяет синтаксис, а обращение к необъявленному
-      # модулю LuCI — отказ во ВРЕМЯ РАБОТЫ. Именно так на вкладку диагностики
-      # уехало «ui is not defined»: инструменты, использующие ui, были
-      # перенесены со страницы состояния, а строка 'require ui' — нет.
+      # The same class of error as with ucode imports, and it is caught just as
+      # poorly: `node --check` checks syntax, while referencing an undeclared
+      # LuCI module fails AT RUNTIME. That is how "ui is not defined" got onto
+      # the diagnostics tab: tools using ui were moved from the status page,
+      # but the 'require ui' line was not.
       - name: LuCI module requires
         run: |
-          # Ищется именно ВЫЗОВ — `модуль.что-то(` — а не любое упоминание:
-          # слово «network.» встречается в тексте описания поля, и проверка на
-          # подстроку давала ложное срабатывание. Комментарии и текст в
-          # кавычках вызовов не содержат, поэтому этого признака достаточно.
+          # The search is specifically for a CALL — `module.something(` — not
+          # any mention: the word "network." occurs in field description text,
+          # and a substring check gave false positives. Comments and quoted text
+          # contain no calls, so this marker is enough.
           mods="ui dom rpc uci form view poll fs network validation"
           fail=0
           for f in packages/luci-app-trusttunnel-lite/htdocs/luci-static/resources/view/trusttunnel/*.js; do
