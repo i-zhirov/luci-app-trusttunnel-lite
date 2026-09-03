@@ -122,7 +122,10 @@ assert_contains "$(cat "$RECORDS")" "br-guest" \
 # --- Restart keeping routing --------------------------------------------------
 
 setup
-sed -i '' 's/a.example/b.example/' "$TT_NEXT"
+# `sed -i ''` is BSD-only: GNU sed treats the separate empty string as the
+# script and the next token as a file, so the edit fails on CI. awk behaves
+# identically on both, hence the temp file + mv.
+awk '{ gsub(/a\.example/, "b.example"); print }' "$TT_NEXT" > "$TT_NEXT.tmp" && mv "$TT_NEXT.tmp" "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=1" \
