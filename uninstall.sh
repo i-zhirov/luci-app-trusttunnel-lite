@@ -1,24 +1,26 @@
 #!/bin/sh
-# Uninstall of luci-app-trusttunnel-lite for OpenWrt 25.12+.
+# Uninstall of luci-app-trusttunnel-lite for OpenWrt 22.03+.
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/uninstall.sh)"
 #
 # Stops the service, removes it from auto-start, deletes both packages in
-# one apk call (the language package depends on the main one), the client
-# binary and the caches, restarts rpcd and clears the LuCI caches so the
-# menu and the pages forget the removed package. At the end it checks that
-# no table, rule or routes remain in the kernel.
+# one package-manager call (apk on 25.12+, opkg on 22.03-24.10; the language
+# package depends on the main one), the client binary and the caches,
+# restarts rpcd and clears the LuCI caches so the menu and the pages forget
+# the removed package. At the end it checks that no table, rule or routes
+# remain in the kernel.
 #
 # The fork writes nothing into cron or the dnsmasq config, but the script
 # still cleans their traces: they remain from the original
 # luci-app-trusttunnel if it was installed on the router before the fork.
 #
 # The firewall zone and /etc/config/trusttunnel are removed only after
-# confirmation: the former because apk knows nothing about it and it may
-# be needed (e.g. during a temporary teardown), the latter because the
-# file is declared in conffiles and a reinstall without it loses the
-# settings. Dependencies (kmod-tun, ip-full, curl, ca-bundle) are not
-# touched at all: they are shared and may be used by other packages — apk
-# itself removes the ones nobody needs after the removal.
+# confirmation: the former because the package manager knows nothing about
+# it and it may be needed (e.g. during a temporary teardown), the latter
+# because the file is declared in conffiles and a reinstall without it
+# loses the settings. Dependencies (kmod-tun, ip-full, curl, ca-bundle) are
+# not touched at all: they are shared and may be used by other packages —
+# apk itself removes the ones nobody needs after the removal, opkg keeps
+# them.
 #
 # Flags:
 #   -y — ask no questions: remove both the firewall zone and the settings;
@@ -60,11 +62,18 @@ shift $((OPTIND - 1))
 # --- Environment checks -------------------------------------------------------
 [ -f /etc/openwrt_release ] || die "this script is for OpenWrt only"
 
+# The same package-manager detection as in install.sh: apk (25.12+) or
+# opkg (22.03-24.10).
+PM=""
+command -v apk >/dev/null 2>&1 && PM=apk
+[ -n "$PM" ] || { command -v opkg >/dev/null 2>&1 && PM=opkg; }
+[ -n "$PM" ] || die "neither apk nor opkg found; unsupported OpenWrt variant"
+
 # --- Service ------------------------------------------------------------------
-# Stopped BEFORE the package is removed: apk will take the init script
-# away, and after that there would be nothing to stop the running client
-# with. `disable` removes the /etc/rc.d/S95trusttunnel link that
-# uci-defaults created at install.
+# Stopped BEFORE the package is removed: the package manager will take the
+# init script away, and after that there would be nothing to stop the
+# running client with. `disable` removes the /etc/rc.d/S95trusttunnel link
+# that uci-defaults created at install.
 if [ -x /etc/init.d/trusttunnel ]; then
 	say "== Stopping and disabling the service"
 	/etc/init.d/trusttunnel stop >/dev/null 2>&1 || true
@@ -76,16 +85,36 @@ fi
 # --- Packages -----------------------------------------------------------------
 say "== Removing the packages"
 _pkgs=""
-# `apk info -e` — "is the package installed" — works the same in apk-tools
-# v2 and v3.
-apk info -e luci-app-trusttunnel-lite >/dev/null 2>&1 && _pkgs="$_pkgs luci-app-trusttunnel-lite"
-apk info -e luci-i18n-trusttunnel-lite-ru >/dev/null 2>&1 && _pkgs="$_pkgs luci-i18n-trusttunnel-lite-ru"
+if [ "$PM" = "apk" ]; then
+	# `apk info -e` — "is the package installed" — works the same in
+	# apk-tools v2 and v3.
+	apk info -e luci-app-trusttunnel-lite >/dev/null 2>&1 && _pkgs="$_pkgs luci-app-trusttunnel-lite"
+	apk info -e luci-i18n-trusttunnel-lite-ru >/dev/null 2>&1 && _pkgs="$_pkgs luci-i18n-trusttunnel-lite-ru"
+else
+	# opkg processes the remove arguments IN ORDER and refuses to remove a
+	# package that still has installed dependents ("is depended upon by").
+	# The language package depends on the main one, so it comes FIRST: once
+	# it is gone, the main one is removed without questions. Both in one
+	# call, as in the apk branch.
+	#
+	# `opkg list-installed` prints "name - version - description", so the
+	# pattern is a line start with the name and a space, not an exact match
+	# of the whole line.
+	opkg list-installed 2>/dev/null | grep -q '^luci-i18n-trusttunnel-lite-ru ' && _pkgs="luci-i18n-trusttunnel-lite-ru"
+	opkg list-installed 2>/dev/null | grep -q '^luci-app-trusttunnel-lite ' && _pkgs="$_pkgs luci-app-trusttunnel-lite"
+fi
 if [ -n "$_pkgs" ]; then
 	# Both packages in one call: the language package depends on the main
-	# one, and apk del of the main one alone would silently delete
-	# nothing — "not removed due to".
+	# one, and removing the main one alone would silently delete nothing —
+	# apk answers "not removed due to", opkg "is depended upon by". For
+	# opkg the order in the list matters: the dependent must come first
+	# (see above).
 	# shellcheck disable=SC2086
-	apk del $_pkgs
+	if [ "$PM" = "apk" ]; then
+		apk del $_pkgs
+	else
+		opkg remove $_pkgs
+	fi
 else
 	say "   no trusttunnel packages are installed"
 fi
@@ -225,4 +254,4 @@ say ""
 say "== Done"
 say "The packages, the client, the caches and the firewall zone are gone."
 say "Shared dependencies are not removed on purpose; apk drops on its own only"
-say "the ones that nothing else depends on."
+say "the ones nothing else depends on, and opkg leaves them in place."

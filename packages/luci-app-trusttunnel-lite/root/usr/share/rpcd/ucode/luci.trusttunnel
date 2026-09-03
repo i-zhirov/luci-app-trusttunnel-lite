@@ -497,13 +497,22 @@ return {
 				if (m) out.client = m[1];
 			}
 
-			// apk prints "luci-app-trusttunnel-lite-1.0.0-r1 noarch {...} [installed]".
-			// The version comes from the package name, so the pattern captures
-			// everything between the name and the first space, including the
-			// -rN suffix.
+			// apk prints "luci-app-trusttunnel-lite-1.0.10-r1 noarch {...} [installed]",
+			// opkg prints "Version: 1.0.10-r1" in the `opkg info` output. apk is
+			// tried first: on an opkg device the command is absent, the output
+			// is empty and the fallback kicks in. No binary paths need to be
+			// hardcoded.
 			let rp = sh_out('apk list -I luci-app-trusttunnel-lite');
 			let mp = match(trim(rp.out), /luci-app-trusttunnel-lite-([^ \t\n]+)/);
-			if (mp) out.package = mp[1];
+			if (mp) {
+				out.package = mp[1];
+			} else {
+				let ri = sh_out('opkg info luci-app-trusttunnel-lite');
+				for (let line in split(ri.out, '\n')) {
+					let mv = match(line, /^Version: ([^ \t\n]+)$/);
+					if (mv) { out.package = mv[1]; break; }
+				}
+			}
 
 			// The network part: the latest release of our repository, with a
 			// disk cache. When GitHub is unreachable we serve the cache with

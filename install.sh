@@ -1,5 +1,7 @@
 #!/bin/sh
-# Installer for luci-app-trusttunnel-lite for OpenWrt 25.12+.
+# Installer for luci-app-trusttunnel-lite for OpenWrt 22.03+.
+# Both branches are supported: apk (25.12+) and opkg (22.03-24.10); the package
+# manager and the artifact format are detected automatically.
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
 set -e
 
@@ -16,13 +18,25 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 # shellcheck disable=SC1091
 . /etc/openwrt_release
 
+# One installer for both OpenWrt branches: apk (25.12+) and opkg (22.03-24.10).
+# Below, $PM selects the commands and $ext the artifact extension of the
+# release (.apk on apk branches, .ipk on opkg branches).
+PM=""
+command -v apk >/dev/null 2>&1 && PM=apk
+[ -n "$PM" ] || { command -v opkg >/dev/null 2>&1 && PM=opkg; }
+[ -n "$PM" ] || die "neither apk nor opkg found; unsupported OpenWrt variant"
+ext=apk; [ "$PM" = "opkg" ] && ext=ipk
+
 major=$(printf '%s' "$DISTRIB_RELEASE" | cut -d. -f1)
 case "$major" in
-	[0-9]*) [ "$major" -ge 25 ] || die "OpenWrt 25.12 or newer is required (found $DISTRIB_RELEASE)" ;;
-	*)      say "warning: cannot parse release '$DISTRIB_RELEASE', continuing" ;;
+	[0-9]*)
+		case "$PM" in
+			apk)  [ "$major" -ge 25 ] || die "apk requires OpenWrt 25.12 or newer (found $DISTRIB_RELEASE)" ;;
+			opkg) [ "$major" -ge 22 ] || die "opkg requires OpenWrt 22.03 or newer (found $DISTRIB_RELEASE)" ;;
+		esac
+		;;
+	*) say "warning: cannot parse release '$DISTRIB_RELEASE', continuing" ;;
 esac
-
-command -v apk >/dev/null 2>&1 || die "apk not found; this package targets OpenWrt 25.12+"
 
 # The architecture is checked here, BEFORE anything is installed: the check
 # used to run after installing the luci-app-trusttunnel-lite package and
@@ -57,8 +71,13 @@ case "$arch" in
 esac
 
 say "== Installing dependencies"
-apk update
-apk add kmod-tun ip-full curl ca-bundle
+if [ "$PM" = "apk" ]; then
+	apk update
+	apk add kmod-tun ip-full curl ca-bundle
+else
+	opkg update
+	opkg install kmod-tun ip-full curl ca-bundle
+fi
 
 # --- Package ------------------------------------------------------------------
 say "== Fetching the latest package release"
@@ -71,31 +90,31 @@ curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" > "$tmp/release.
 # The argument is substituted into the sed expression WITHOUT escaping
 # regex metacharacters, so it is only safe for the literal strings this
 # function is called with below ('luci-app-trusttunnel-lite',
-# 'luci-i18n-trusttunnel-lite') — not for arbitrary input.
-pick_asset() {
-	sed -n 's/.*"browser_download_url": *"\([^"]*'"$1"'[^"]*\.apk\)".*/\1/p' \
+# 'luci-i18n-trusttunnel-lite', 'apk', 'ipk') — not for arbitrary input.
+pick_asset() { # $1 — package name substring, $2 — extension (apk|ipk)
+	sed -n 's/.*"browser_download_url": *"\([^"]*'"$1"'[^"]*\.'"$2"'\)".*/\1/p' \
 		"$tmp/release.json" | head -n1
 }
 
-url=$(pick_asset 'luci-app-trusttunnel-lite')
-[ -n "$url" ] || die "cannot find a luci-app-trusttunnel-lite .apk in the latest release of $REPO"
+url=$(pick_asset 'luci-app-trusttunnel-lite' "$ext")
+[ -n "$url" ] || die "cannot find a luci-app-trusttunnel-lite .$ext in the latest release of $REPO"
 
 # luci.mk builds a SEPARATE luci-i18n-trusttunnel-lite-ru package from
 # po/ru. Without it the UI stays English even though the translation exists
 # in the repository, so it has to be picked up too. The name derives from
 # LUCI_BASENAME, i.e. from the package directory name.
-i18n_url=$(pick_asset 'luci-i18n-trusttunnel-lite')
+i18n_url=$(pick_asset 'luci-i18n-trusttunnel-lite' "$ext")
 
 say "   $url"
-curl -fsSL -o "$tmp/pkg.apk" "$url" || die "failed to download $url"
+curl -fsSL -o "$tmp/pkg.$ext" "$url" || die "failed to download $url"
 if [ -n "$i18n_url" ]; then
 	say "   $i18n_url"
 	# The failure is NOT fatal, same as the failure of installing this
 	# package below: a release without a translation is degraded, not
 	# broken, and aborting the already-downloaded main package because of
 	# it would be wrong.
-	curl -fsSL -o "$tmp/i18n.apk" "$i18n_url" \
-		|| { rm -f "$tmp/i18n.apk"; say "warning: could not download the translation package; the interface will be English"; }
+	curl -fsSL -o "$tmp/i18n.$ext" "$i18n_url" \
+		|| { rm -f "$tmp/i18n.$ext"; say "warning: could not download the translation package; the interface will be English"; }
 else
 	say "   note: no translation package in this release; the interface will be English"
 fi
@@ -107,7 +126,7 @@ fi
 # the FIRST install the service must not start, the endpoint is not
 # configured yet. Simply not starting it is also wrong: then a user with a
 # working tunnel updates and stays without a tunnel until manual
-# intervention, because `apk add` does not bring our service up.
+# intervention, because neither apk nor opkg brings our service up.
 was_running=0
 if [ -x /etc/init.d/trusttunnel ]; then
 	/etc/init.d/trusttunnel running >/dev/null 2>&1 && was_running=1
@@ -116,10 +135,20 @@ if [ -x /etc/init.d/trusttunnel ]; then
 fi
 
 say "== Installing the package"
-apk add --allow-untrusted "$tmp/pkg.apk"
-if [ -f "$tmp/i18n.apk" ]; then
-	apk add --allow-untrusted "$tmp/i18n.apk" \
-		|| say "warning: the translation package failed to install; the interface will be English"
+if [ "$PM" = "apk" ]; then
+	apk add --allow-untrusted "$tmp/pkg.apk"
+	if [ -f "$tmp/i18n.apk" ]; then
+		apk add --allow-untrusted "$tmp/i18n.apk" \
+			|| say "warning: the translation package failed to install; the interface will be English"
+	fi
+else
+	# A local .ipk does not pass signature verification (opkg only checks
+	# packages from feeds), so no --force-* flags are needed.
+	opkg install "$tmp/pkg.ipk"
+	if [ -f "$tmp/i18n.ipk" ]; then
+		opkg install "$tmp/i18n.ipk" \
+			|| say "warning: the translation package failed to install; the interface will be English"
+	fi
 fi
 
 # --- Client binary -----------------------------------------------------------
