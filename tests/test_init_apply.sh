@@ -60,12 +60,15 @@ assert_eq "domains.direct" "$(changed_keys "$old" "$new")" \
 	"a removed list item is visible"
 
 cp "$old" "$new"
-sed -i '' 's/a.example/b.example/' "$new"
+# `sed -i ''` is BSD-only: GNU sed treats the separate empty string as the
+# script and the next token as a file, so the edit fails on CI. awk behaves
+# identically on both, hence the temp file + mv.
+awk '{ gsub(/a\.example/, "b.example"); print }' "$new" > "$new.tmp" && mv "$new.tmp" "$new"
 assert_eq "endpoint.hostname" "$(changed_keys "$old" "$new")" \
 	"a changed scalar value is visible"
 
 cp "$old" "$new"
-sed -i '' 's/a.example/b.example/' "$new"
+awk '{ gsub(/a\.example/, "b.example"); print }' "$new" > "$new.tmp" && mv "$new.tmp" "$new"
 printf 'network.mtu\t1400\n' >> "$new"
 assert_eq "endpoint.hostname network.mtu" \
 	"$(changed_keys "$old" "$new" | tr '\n' ' ' | sed 's/ $//')" \
@@ -124,7 +127,7 @@ assert_eq "restart" "$(classify_change "$old" "$new")" \
 # a cheap edit next to an expensive one must not devalue it.
 cp "$old" "$new"
 printf 'domains.direct\tbank2.example\n' >> "$new"
-sed -i '' 's/a.example/b.example/' "$new"
+awk '{ gsub(/a\.example/, "b.example"); print }' "$new" > "$new.tmp" && mv "$new.tmp" "$new"
 assert_eq "restart" "$(classify_change "$old" "$new")" \
 	"exclusions together with the server address — restart"
 
