@@ -16,16 +16,16 @@ var callLog = rpc.declare({
 	object: 'luci.trusttunnel', method: 'log', params: [ 'lines' ]
 });
 
-// Эта страница отвечает на ОДИН вопрос: работает или нет. Раньше здесь была
-// таблица из двенадцати строк — устройство, ip rule, таблица маршрутизации,
-// nft-таблица, размер набора обхода, поддержка nftset в dnsmasq. Всё это
-// названия внутренних механизмов, а не то, чем человек управляет и что
-// узнаёт; судить по ним «работает ли туннель» приходилось самому, сверяя
-// зелёные значки между собой.
+// This page answers ONE question: does it work or not. Previously there was a
+// table of twelve rows — device, ip rule, routing table, nft table, size of
+// the bypass set, nftset support in dnsmasq. All of these are names of
+// internal mechanisms, not things a person manages and learns from; judging
+// "does the tunnel work" from them had to be done by hand, cross-checking
+// green badges against each other.
 //
-// Теперь состояние сведено в одну фразу с конкретными числами, а разбор по
-// звеньям с объяснениями живёт на вкладке «Диагностика» — там он к месту и
-// здесь не дублируется.
+// Now the state is condensed into one phrase with concrete numbers, and the
+// link-by-link breakdown with explanations lives on the Diagnostics tab —
+// that is where it belongs and it is not duplicated here.
 function verdict(st) {
 	var host = st.endpoint_hostname || (st.addresses || [])[0] || '';
 
@@ -64,9 +64,9 @@ return view.extend({
 		ui.showModal(_('Please wait'), [ E('p', { 'class': 'spinning' }, _('Running…')) ]);
 		return callService(action).then(function(res) {
 			ui.hideModal();
-			// not_running: собственный код возврата init-скрипта для `start`
-			// недостоверен (см. действие service в luci.trusttunnel) — бэкенд
-			// перепроверил через procd и ничего работающего не нашёл.
+			// not_running: the init script's own return code for `start` is
+			// unreliable (see the service action in luci.trusttunnel) — the
+			// backend re-checked via procd and found nothing running.
 			if (res && res.not_running)
 				ui.addNotification(null, E('p', {}, _('The service did not start. The client log below says why.')), 'warning');
 			else if (res && res.code !== 0)
@@ -79,14 +79,15 @@ return view.extend({
 		});
 	},
 
-	// Вердикт и факты отрисовываются ПОРОЗНЬ, потому что живут в разных местах
-	// страницы: вердикт занимает всю ширину (это заголовок ответа), а факты
-	// стоят в паре с версиями. Опрос обновляет оба блока из одного вызова.
-	// Полоса-вердикт показывается ТОЛЬКО когда что-то не так. Тогда она и
-	// нужна: там подсказка, что делать, и заметность оправдана. Когда всё
-	// работает, полоса во всю ширину сообщала бы «всё хорошо» — то есть
-	// занимала бы самое видное место страницы, не давая повода к действию.
-	// В этом случае состояние стоит обычной строкой в таблице слева, первой.
+	// The verdict and the facts are rendered SEPARATELY because they live in
+	// different places on the page: the verdict takes the full width (it is
+	// the headline answer), while the facts sit next to the versions. The
+	// poll updates both blocks from one call. The verdict bar is shown ONLY
+	// when something is wrong. That is when it is needed: it says what to do,
+	// and the prominence is justified. When everything works, a full-width
+	// bar would say "all good" — that is, it would occupy the most visible
+	// spot on the page without giving any reason for action. In that case
+	// the state stands as an ordinary row in the table on the left, first.
 	renderVerdict: function(st) {
 		var v = verdict(st);
 		if (v.level === 'success')
@@ -101,8 +102,8 @@ return view.extend({
 		var v = verdict(st);
 		var rows = [];
 
-		// Состояние первой строкой и только при успехе: при отказе о нём
-		// говорит полоса выше, и дублировать её здесь незачем.
+		// The state comes first and only on success: on failure the bar
+		// above says it, and there is no point duplicating it here.
 		if (v.level === 'success')
 			rows.push(row(_('State'),
 				E('span', { 'style': 'color:#2e7d32;font-weight:bold' }, _('working'))));
@@ -122,10 +123,11 @@ return view.extend({
 			row(_('TrustTunnel client'), v.client || _('not installed'))
 		];
 
-		// latest == null означает «проверить не удалось»: ни сети, ни кэша,
-		// либо у репозитория ещё нет ни одного релиза. Это НЕ то же самое,
-		// что «обновлений нет», и говорить об этом надо разными словами —
-		// иначе человек решит, что он на свежей версии, хотя проверки не было.
+		// latest == null means "the check failed": no network, no cache, or
+		// the repository does not have a single release yet. This is NOT the
+		// same as "no updates", and it must be said in different words —
+		// otherwise the user would think they are on the latest version when
+		// no check happened.
 		if (v.latest == null)
 			rows.push(row(_('Update check'), _('unavailable — no network and no cached result')));
 		else if (v.update_available)
@@ -133,9 +135,10 @@ return view.extend({
 				E('strong', {}, _('%s is available').format(v.latest)), ' — ',
 				_('run install.sh again to update')
 			])));
-		// Установленное новее последнего известного релиза — не «актуальная
-		// версия», а особый случай: либо сборка из main, либо кэш, который не
-		// удалось обновить. Своими словами, а не общим успокаивающим ответом.
+		// Installed newer than the last known release is not "up to date"
+		// but a special case: either a build from main, or a cache that
+		// could not be refreshed. Say it in its own words, not with a
+		// blanket reassuring answer.
 		else if (v.ahead)
 			rows.push(row(_('Update'),
 				_('the installed version is newer than the latest release (%s)').format(v.latest)));
@@ -145,9 +148,10 @@ return view.extend({
 		if (v.stale)
 			rows.push(row(_('Update check'), _('GitHub unreachable, showing the last cached result')));
 
-		// Кнопка обязательна именно потому, что ответ кэшируется: без неё
-		// единственный способ узнать о вышедшем релизе раньше, чем истечёт
-		// кэш, — перезагрузить роутер (кэш лежит в /var, то есть в tmpfs).
+		// The button is essential precisely because the answer is cached:
+		// without it the only way to learn about a new release before the
+		// cache expires is to reboot the router (the cache lives in /var,
+		// i.e. tmpfs).
 		return E('div', {}, [
 			E('table', { 'class': 'table' }, rows),
 			E('div', { 'style': 'margin-top:.5em' }, E('button', {
@@ -176,9 +180,9 @@ return view.extend({
 			'style': 'max-height:22em;overflow:auto;margin:0'
 		}, '');
 
-		// Версии запрашиваются ОДИН раз при отрисовке, а не через poll:
-		// сетевая часть кэшируется, и повторять даже кэшированный вызов
-		// каждые десять секунд незачем.
+		// Versions are requested ONCE at render time, not via poll: the
+		// network part is cached, and repeating even a cached call every
+		// ten seconds serves no purpose.
 		callVersions(false).then(function(v) {
 			dom.content(versionBox, self.renderVersions(v, versionBox));
 		}).catch(function(e) {
@@ -198,14 +202,16 @@ return view.extend({
 			});
 		}, 10);
 
-		// Два блока рядом через flex-wrap, а НЕ через сетку с media-запросами:
-		// оба узкие и самостоятельные, а flex-basis заставляет их встать в
-		// столбик на телефоне сам, без своего CSS. Это тот же приём, которым
-		// размечены строки формы в самой теме (.cbi-value — display:flex).
+		// The two blocks sit side by side via flex-wrap, NOT via a grid
+		// with media queries: both are narrow and self-contained, and
+		// flex-basis makes them stack on a phone by itself, without its own
+		// CSS. It is the same trick used to lay out form rows in the theme
+		// itself (.cbi-value is display:flex).
 		//
-		// Форму так делить нельзя: её строки УЖЕ двухколоночные (метка 180px +
-		// поле), а содержимое ограничено 1180px, поэтому вторая колонка
-		// оставила бы полю около 370px и сплющила пояснения под ним.
+		// The form cannot be split this way: its rows are ALREADY two-column
+		// (a 180px label + field), and the content is capped at 1180px, so a
+		// second column would leave the field about 370px and squash the
+		// descriptions under it.
 		var pair = E('div', {
 			'style': 'display:flex;flex-wrap:wrap;gap:0 1.5em'
 		}, [

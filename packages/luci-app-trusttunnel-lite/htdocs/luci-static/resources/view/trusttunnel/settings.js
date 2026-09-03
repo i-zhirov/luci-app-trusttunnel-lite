@@ -9,17 +9,17 @@ var callImport = rpc.declare({
 	object: 'luci.trusttunnel', method: 'import_config', params: [ 'text' ]
 });
 
-// Все настройки собраны на ОДНОЙ странице с вкладками, а не разложены по
-// отдельным пунктам меню. Причина не в экономии: в LuCI каждый пункт меню —
-// это отдельная страница, и переход между ними перезагружает всю оболочку
-// целиком. Настройка пакета — это один сеанс работы (задать сервер, добавить
-// исключения), и разрывать его тремя перезагрузками неправильно. Штатные
-// страницы LuCI устроены так же: «Система» держит пять вкладок в одной
-// странице, «DHCP и DNS» и «Интерфейсы» — тоже.
+// All settings are gathered on ONE page with tabs, not spread across
+// separate menu items. The reason is not economy: in LuCI every menu item
+// is a separate page, and moving between them reloads the whole shell
+// entirely. Configuring the package is one working session (set the server,
+// add the exclusions), and breaking it with three reloads is wrong. The
+// stock LuCI pages work the same way: "System" keeps five tabs in one page,
+// and "DHCP and DNS" and "Interfaces" do too.
 //
-// Механизм: m.tabbed = true превращает каждую секцию в вкладку, а её заголовок
-// становится названием вкладки. Переключение происходит в браузере, без запроса
-// к роутеру.
+// The mechanism: m.tabbed = true turns every section into a tab, and its
+// title becomes the tab name. Switching happens in the browser, without a
+// request to the router.
 return view.extend({
 	load: function() {
 		return uci.load('trusttunnel');
@@ -55,20 +55,20 @@ return view.extend({
 							if (res.addresses && res.addresses.length)
 								uci.set('trusttunnel', 'endpoint', 'address', res.addresses);
 
-							// uci.set() держит изменения только в памяти
-							// браузера. Перезагрузка страницы их выбрасывает,
-							// поэтому прежний вариант (set + location.reload)
-							// показывал «импортировано», а через 800 мс молча
-							// возвращал прежние значения — импорт выглядел
-							// работающим и не работал.
+							// uci.set() keeps changes only in the browser's
+							// memory. A page reload throws them away, so the
+							// old variant (set + location.reload) showed
+							// "imported" and 800 ms later silently restored
+							// the previous values — the import looked like
+							// it worked and did not.
 							//
-							// uci.save() отправляет изменения на роутер как
-							// ОТЛОЖЕННЫЕ: конфиг не применяется, службы не
-							// перезапускаются, LuCI показывает «есть
-							// несохранённые изменения». После перезагрузки
-							// страницы поля показывают импортированное, а
-							// применяет их пользователь сам — то есть условие
-							// «импорт ничего не применяет» соблюдено.
+							// uci.save() sends the changes to the router as
+							// PENDING: the config is not applied, services
+							// are not restarted, LuCI shows "there are
+							// unsaved changes". After a page reload the
+							// fields show the imported values, and the user
+							// applies them themselves — the "import applies
+							// nothing" condition is satisfied.
 							return uci.save().then(function() {
 								ui.hideModal();
 								ui.addNotification(null, E('p', {},
@@ -88,11 +88,11 @@ return view.extend({
 		var m, s, o;
 
 		m = new form.Map('trusttunnel', _('TrustTunnel'));
-		// Каждая секция становится вкладкой. Прецедент в штатных страницах:
+		// Every section becomes a tab. Precedent in the stock pages:
 		// network/dhcp, network/interfaces, network/routes, system/flash.
 		m.tabbed = true;
 
-		// --- Общее -----------------------------------------------------------
+		// --- General -------------------------------------------------------
 		s = m.section(form.NamedSection, 'main', 'main', _('General'));
 
 		o = s.option(form.Flag, 'enabled', _('Start on boot'),
@@ -105,7 +105,7 @@ return view.extend({
 		o.value('trace', 'trace');
 		o.description = _('debug and trace write a lot; leave them on only while investigating something.');
 
-		// --- Сервер ----------------------------------------------------------
+		// --- Server -------------------------------------------------------
 		s = m.section(form.NamedSection, 'endpoint', 'endpoint', _('Server'));
 
 		o = s.option(form.Button, '_import', _('Server configuration'),
@@ -156,10 +156,10 @@ return view.extend({
 		o = s.option(form.DynamicList, 'dns_upstream', _('DNS used by the client itself'),
 			_('Applies to what the TrustTunnel client resolves on its own — for example the exclusion domains it pre-resolves. Empty means the client default, AdGuard DNS unfiltered.'));
 		o.placeholder = 'tls://1.1.1.1';
-		// Форматы взяты из эталонного конфига, который генерирует сам
-		// setup_wizard: обычный DNS, tcp://, tls://, https://, quic:// и
-		// sdns://. Предустановки — готовые строки этих форматов; своё значение
-		// вписывается тут же, список их не ограничивает.
+		// The formats are taken from the reference config that setup_wizard
+		// itself generates: plain DNS, tcp://, tls://, https://, quic:// and
+		// sdns://. The presets are ready-made strings of these formats; a
+		// custom value can be typed right there, the list does not restrict it.
 		o.value('tls://1.1.1.1', 'Cloudflare — DNS over TLS');
 		o.value('tls://9.9.9.9', 'Quad9 — DNS over TLS');
 		o.value('tls://dns.adguard-dns.com', 'AdGuard — DNS over TLS');
@@ -169,7 +169,7 @@ return view.extend({
 		o.value('1.1.1.1:53', 'Cloudflare — ' + _('plain DNS'));
 		o.value('9.9.9.9:53', 'Quad9 — ' + _('plain DNS'));
 
-		// --- Исключения ------------------------------------------------------
+		// --- Exclusions ----------------------------------------------------
 		s = m.section(form.NamedSection, 'domains', 'domains', _('Exclusions'));
 		s.description = _('Everything goes through the tunnel; these entries always go out directly. The client applies them by SNI, after the kernel has already marked the traffic.');
 
@@ -186,14 +186,14 @@ return view.extend({
 			return true;
 		};
 
-		// --- Сеть ------------------------------------------------------------
+		// --- Network -------------------------------------------------------
 		s = m.section(form.NamedSection, 'network', 'network', _('Network'));
 		s.description = _('These rarely need changing. MTU is the exception: too high a value makes small pages load while TLS handshakes and large downloads stall.');
 
-		// Поля «устройство TUN» здесь БОЛЬШЕ НЕТ. Имя устройства выбирает сам
-		// клиент, а не мы: ключей для его задания в схеме клиента не существует.
-		// Оставлять поле означало бы предлагать настройку, которая ни на что не
-		// влияет. Фактическое имя показано на странице состояния.
+		// The "TUN device" field is GONE here. The device name is chosen by
+		// the client itself, not by us: there are no keys for setting it in
+		// the client schema. Keeping the field would mean offering a setting
+		// that affects nothing. The actual name is shown on the status page.
 		o = s.option(form.Value, 'mtu', _('MTU'));
 		o.datatype = 'range(576,9000)';
 		o.default = '1350';
@@ -210,10 +210,10 @@ return view.extend({
 		o = s.option(form.Flag, 'include_router_traffic', _('Route the router\'s own traffic too'),
 			_('By default only forwarded LAN traffic is routed. Enabling this also routes traffic originated by the router itself, including the update check.'));
 
-		// Метка идёт прямо в `ip rule add fwmark …`, поэтому формат проверяем
-		// здесь: без проверки мусорное значение доходит до ядра, `ip rule`
-		// падает, а его stderr никуда не всплывает — маршрутизация остаётся
-		// собранной наполовину и молча.
+		// The mark goes straight into `ip rule add fwmark …`, so the format
+		// is validated here: without validation a garbage value reaches the
+		// kernel, `ip rule` fails, and its stderr never surfaces — routing
+		// stays half-assembled, silently.
 		o = s.option(form.Value, 'fwmark', _('Firewall mark'),
 			_('Decimal or 0x-prefixed hexadecimal. Change only on a conflict with mwan3, SQM or another package that marks packets.'));
 		o.default = '0x9527';
@@ -221,22 +221,22 @@ return view.extend({
 			if (!value) return true;
 			if (!/^(0x[0-9a-fA-F]{1,8}|[0-9]{1,10})$/.test(value))
 				return _('Enter a decimal number or 0x-prefixed hexadecimal');
-			// Ограничение на число цифр (до 10) само по себе не отсекает
-			// значение, превышающее 32-битный максимум: "9999999999" проходит
-			// эту проверку по форме, хотя fwmark — 32-битное поле в ядре.
+			// The digit-count limit (up to 10) alone does not reject a value
+			// exceeding the 32-bit maximum: "9999999999" passes that check
+			// by form, although fwmark is a 32-bit field in the kernel.
 			if (!/^0x/i.test(value) && +value > 4294967295)
 				return _('Enter a decimal number no greater than 4294967295');
 			return true;
 		};
 
-		// НЕ range(1,252). Идентификатор таблицы маршрутизации в Linux
-		// 32-битный, и значение по умолчанию 880 выбрано именно чтобы не
-		// пересекаться с диапазоном, который занимают другие пакеты.
-		// Проверено на живом OpenWrt: ядро принимает и 880, и 900.
-		// Ограничение 1..252 отвергало бы штатную конфигурацию, то есть
-		// страницу настроек нельзя было бы сохранить из коробки.
-		// Исключаются только 0 и 253..255 — это main, default и local,
-		// перехват которых сломал бы маршрутизацию всей системы.
+		// NOT range(1,252). The routing table id in Linux is 32-bit, and the
+		// default value 880 was chosen precisely to avoid overlapping the
+		// range occupied by other packages. Verified on a live OpenWrt: the
+		// kernel accepts both 880 and 900. The 1..252 limit would reject the
+		// stock configuration, i.e. the settings page could not be saved out
+		// of the box. Only 0 and 253..255 are excluded — these are main,
+		// default and local, hijacking them would break routing of the whole
+		// system.
 		o = s.option(form.Value, 'table', _('Routing table'),
 			_('Any table id except 0 and the reserved 253-255.'));
 		o.datatype = 'uinteger';

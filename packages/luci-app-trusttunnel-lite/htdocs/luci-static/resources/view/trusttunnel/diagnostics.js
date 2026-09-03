@@ -13,9 +13,10 @@ var callCheckDomain = rpc.declare({
 	object: 'luci.trusttunnel', method: 'check_domain', params: [ 'domain' ]
 });
 
-// Слово вердикта вместо цветного кружка: на узком экране и в тёмной теме
-// цвет читается хуже текста, а класс alert-message LuCI уже несёт и фон, и
-// отступы — своего CSS не требуется, что важно для веса пакета.
+// A verdict word instead of a colored dot: on a narrow screen and in a
+// dark theme color reads worse than text, and LuCI's alert-message class
+// already carries both the background and the padding — no own CSS is
+// needed, which matters for the package weight.
 var VERDICT_CLASS = { ok: 'success', warn: 'warning', fail: 'danger', skip: 'info' };
 
 function row(label, value) {
@@ -39,8 +40,8 @@ function verdictWord(v) {
 	return _('not checked');
 }
 
-// Статус одной проверки — короткое слово фиксированной ширины, чтобы список
-// читался столбцом, а не рваным краем.
+// The status of one check — a short word of fixed width, so the list
+// reads as a column rather than a ragged edge.
 function checkMark(status) {
 	var t = { ok: _('ok'), warn: _('check'), fail: _('problem'), skip: _('skipped') };
 	var c = { ok: '#2e7d32', warn: '#ef6c00', fail: '#c62828', skip: '#757575' };
@@ -49,12 +50,13 @@ function checkMark(status) {
 	}, t[status] || status);
 }
 
-// Текст проверок приходит из бэкенда по-английски: бэкенд сообщает ФАКТЫ, а
-// формулировки принадлежат интерфейсу. Здесь литеральные _() — не динамический
-// вызов _(переменная): так строки гарантированно попадают в каталог и
-// переводятся независимо от того, как тема разрешает перевод во время
-// выполнения. Неизвестная строка проходит как есть — это детали вроде адресов
-// и чисел, которые переводить нечего.
+// The check texts come from the backend in English: the backend reports
+// FACTS, while the wording belongs to the interface. Literal _() calls are
+// used here, not a dynamic _(variable) call: this way the strings are
+// guaranteed to land in the catalog and get translated regardless of how
+// the theme resolves translation at runtime. An unknown string passes
+// through as-is — these are details like addresses and numbers that have
+// nothing to translate.
 var DIAG_TEXT = {
 	'Endpoint address': _('Endpoint address'),
 	'Credentials': _('Credentials'),
@@ -121,21 +123,21 @@ var GROUP_TITLE = {
 };
 
 return view.extend({
-	// Страница не имеет формы и ничего не сохраняет, поэтому кнопки
-	// «Сохранить»/«Применить» LuCI здесь лишние.
+	// The page has no form and saves nothing, so LuCI's Save/Apply
+	// buttons are unnecessary here.
 	handleSaveApply: null,
 	handleSave: null,
 	handleReset: null,
 
-	// Список проверок с подсказками — это около 35 строк. Показывать их
-	// все и всегда неправильно по двум причинам. Когда всё в порядке, читать
-	// нечего: ответ «работает» умещается в одну строку. Когда есть проблема,
-	// её надо найти, а она тонет среди зелёных строк.
+	// The check list with hints is about 35 rows. Showing all of them
+	// always is wrong for two reasons. When everything is fine there is
+	// nothing to read: the "it works" answer fits in one line. When there
+	// is a problem, it has to be found, and it drowns among the green rows.
 	//
-	// Поэтому: проблемы и замечания идут сверху, остальное — за кнопкой.
-	// Двумя колонками эту длину сокращать нельзя: задача читателя — найти
-	// ПЕРВУЮ проблему сверху вниз, а в двух колонках «первая» перестаёт быть
-	// однозначной.
+	// Therefore: problems and remarks go on top, the rest hides behind a
+	// button. The length cannot be cut with two columns: the reader's
+	// task is to find the FIRST problem top-down, and in two columns
+	// "first" stops being unambiguous.
 	renderChecks: function(list) {
 		var order = [ 'config', 'prereq', 'service', 'kernel', 'network' ];
 		var byGroup = {};
@@ -154,9 +156,9 @@ return view.extend({
 					E('td', { 'class': 'td left', 'width': '33%' }, dtr(c.label)),
 					E('td', { 'class': 'td left' }, dtr(c.detail))
 				]));
-				// Подсказка показывается только там, где есть что исправлять,
-				// и отдельной строкой во всю ширину: рядом со значением она
-				// съедала бы место у самого значения на узком экране.
+				// The hint is shown only where there is something to fix,
+				// and on its own full-width row: next to the value it would
+				// eat space from the value itself on a narrow screen.
 				if (c.hint)
 					rows.push(E('tr', { 'class': 'tr' }, [
 						E('td', { 'class': 'td left' }, ''),
@@ -219,11 +221,11 @@ return view.extend({
 		return callDiagnose().then(function(res) {
 			dom.content(container, this.renderDiagnose(res));
 		}.bind(this)).catch(function(e) {
-			// catch обязателен: без него отклонённый вызов — таймаут ubus,
-			// отказ в правах, перегруженный роутер — оставил бы страницу с
-			// надписью «идёт проверка…» навсегда. Застрявший индикатор хуже
-			// сообщения об ошибке: он выглядит как работающая проверка,
-			// которая никогда не завершится.
+			// catch is mandatory: without it a rejected call — an ubus
+			// timeout, a permissions failure, an overloaded router — would
+			// leave the page showing "checking…" forever. A stuck spinner
+			// is worse than an error message: it looks like a working check
+			// that will never finish.
 			dom.content(container, E('div', { 'class': 'alert-message danger' },
 				e.message || String(e)));
 		});
@@ -250,11 +252,11 @@ return view.extend({
 				])
 			].concat(rows)));
 		}).catch(function(e) {
-			// Без этого при отклонённом вызове — таймаут ubus, отказ в
-			// правах, перегруженный роутер — панель навсегда остаётся с
-			// надписью «Пингую…». На странице диагностики застрявший
-			// индикатор хуже отсутствующей функции: он выглядит как
-			// работающая проверка, которая никогда не завершится.
+			// Without this, a rejected call — an ubus timeout, a
+			// permissions failure, an overloaded router — leaves the panel
+			// stuck on "Pinging…" forever. On the diagnostics page a stuck
+			// spinner is worse than a missing feature: it looks like a
+			// working check that will never finish.
 			dom.content(container, E('p', {}, e.message || String(e)));
 		});
 	},
@@ -305,14 +307,14 @@ return view.extend({
 			'placeholder': 'youtube.com', 'style': 'width:16em'
 		});
 
-		// Проверка запускается сразу при открытии: на эту вкладку заходят
-		// именно за тем, чтобы увидеть состояние, и лишний щелчок ничего не
-		// добавляет. Кнопка ниже — для повторного прогона после исправлений.
+		// The check runs immediately on open: this tab is visited precisely
+		// to see the state, and an extra click adds nothing. The button
+		// below is for re-running after fixes.
 		this.handleDiagnose(diagBox);
 
-		// Enter в поле домена делает то же, что кнопка: набрать домен и нажать
-		// Enter — естественнее, чем тянуться мышью, а инструментом пользуются
-		// подряд по нескольким доменам.
+		// Enter in the domain field does the same as the button: typing a
+		// domain and pressing Enter is more natural than reaching for the
+		// mouse, and the tool is used for several domains in a row.
 		domainInput.addEventListener('keydown', function(ev) {
 			if (ev.key === 'Enter') {
 				ev.preventDefault();
@@ -332,10 +334,11 @@ return view.extend({
 				diagBox
 			]),
 
-			// Инструменты живут здесь, а не на странице состояния: это
-			// действия по требованию, и нужны они тогда же, когда открывают
-			// диагностику — когда что-то не работает. На странице состояния
-			// они удлиняли страницу, которая должна отвечать одним взглядом.
+			// The tools live here, not on the status page: they are
+			// on-demand actions, and they are needed at the same time
+			// diagnostics is opened — when something does not work. On the
+			// status page they would lengthen a page that should answer at
+			// a glance.
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, _('Check a domain')),
 				E('p', {}, _('The tool to reach for when a particular site does not work: it says whether that domain goes through the tunnel, and why.')),
