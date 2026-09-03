@@ -28,8 +28,10 @@ What the fork does **not** touch: dnsmasq, its config, its cache, the
 
 ## Requirements
 
-- OpenWrt **25.12 or newer** (apk package manager). opkg-based releases are
-  not supported.
+- OpenWrt **22.03 or newer** — both package-manager generations: **25.12+**
+  (apk) and **22.03 – 24.10** (opkg). The installer detects the package
+  manager automatically. 21.02 and older are not supported (their rpcd
+  cannot run this package's ucode backend).
 - CPU in {`x86_64`, `aarch64`, `armv7l`/`armv8l`, `mips`, `mipsel`} — the
   TrustTunnel client ships prebuilt binaries only for these. The installer
   checks `uname -m` before installing anything, so an unsupported device
@@ -47,14 +49,19 @@ sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunn
 
 What the installer does:
 
-1. Checks that this is OpenWrt 25.12+ with `apk` and a supported CPU.
+1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
+   (25.12+) or `opkg` (22.03–24.10).
 2. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
-3. Downloads `luci-app-trusttunnel-lite-*.apk` from the latest release and
-   installs it.
+3. Downloads `luci-app-trusttunnel-lite-*.apk` (or `*.ipk` on opkg releases)
+   from the latest release and installs it.
 4. Installs the client binary with TrustTunnel's own installer into
    `/opt/trusttunnel_client`.
 5. Restarts `rpcd` so LuCI sees the new backend.
+
+On opkg releases (22.03–24.10) the installer runs `opkg update` and installs
+the `.ipk` files from the same GitHub release; nothing else differs. No opkg
+feed is required.
 
 The service is left **disabled** after installation, on purpose: configure
 first, start second. Re-running the installer updates the package and the
@@ -123,8 +130,9 @@ sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunn
 What the script does:
 
 1. Stops the service and disables it (removes the autostart link).
-2. Removes both packages in a single `apk del` call — the i18n package
-   and the main one.
+2. Removes both packages in a single call — `apk del` on 25.12+,
+   `opkg remove` on 22.03–24.10 (the i18n package is removed first,
+   because it depends on the main one).
 3. Removes the client binary from `/opt/trusttunnel_client`, the cached
    data and — if they survived from the original package — the lists, the
    cron job and the dnsmasq include.
@@ -150,8 +158,11 @@ If you prefer to uninstall by hand, step by step:
 /etc/init.d/trusttunnel stop
 /etc/init.d/trusttunnel disable
 
-# The i18n package must be in the SAME apk del call (it depends on the main one).
+# The i18n package must be in the SAME call (it depends on the main one).
+# apk (25.12+):
 apk del luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
+# opkg (22.03-24.10) — the i18n package must be listed FIRST:
+opkg remove luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
 
 rm -rf /opt/trusttunnel_client
 ```
@@ -198,6 +209,10 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
   package is installed with `apk add --allow-untrusted` like the original —
   verify the SHA-256 from the release notes if you download `.apk` files
   manually.
+- On opkg, the `.ipk` files are installed directly from the GitHub release
+  and are not signed (opkg only verifies feed signatures, so a local
+  install does not complain). As with the `.apk` files, verify the SHA-256
+  from the release notes if you download them manually.
 
 ## Acknowledgements
 

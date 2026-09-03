@@ -21,6 +21,28 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The apk branch: the canonical .apk is published to the release.
+          - arch: x86-64-25.12.5
+            ext: apk
+            publish: true
+          # The opkg branches: ONE canonical .ipk is published, from the
+          # oldest branch (22.03) — the package's dependencies are
+          # unversioned, so it installs on 23.05/24.10. The other branches
+          # only verify the build and go to the Actions artifacts, not to
+          # the release.
+          - arch: x86-64-22.03.7
+            ext: ipk
+            publish: true
+          - arch: x86-64-23.05.6
+            ext: ipk
+            publish: false
+          - arch: x86-64-24.10.8
+            ext: ipk
+            publish: false
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -48,7 +70,7 @@ jobs:
       - name: Build package via OpenWrt SDK Action
         uses: openwrt/gh-action-sdk@v7
         env:
-          ARCH: x86-64-25.12.5
+          ARCH: ${{ matrix.arch }}
           FEEDNAME: ttowrt
           # The feed is the WHOLE repository, not the packages/ directory, and
           # the path MUST be ABSOLUTE. Two different reasons, both verified.
@@ -78,18 +100,18 @@ jobs:
           mkdir -p dist
           # The build produces TWO packages: luci-app itself and the translation
           # package that luci.mk generates from po/ru as luci-i18n-trusttunnel-lite-ru.
-          find out/bin/ -name 'luci-app-trusttunnel-lite*.apk' -exec cp {} dist/ \;
-          find out/bin/ -name 'luci-i18n-trusttunnel-*.apk' -exec cp {} dist/ \;
+          find out/bin/ -name "luci-app-trusttunnel-lite*.${{ matrix.ext }}" -exec cp {} dist/ \;
+          find out/bin/ -name "luci-i18n-trusttunnel-*.${{ matrix.ext }}" -exec cp {} dist/ \;
           ls -la dist/
           # A missing of either of the two packages is a build error, and it
           # must be noticed here, not by the user.
-          ls dist/luci-app-trusttunnel-lite*.apk >/dev/null
-          ls dist/luci-i18n-trusttunnel-*.apk >/dev/null
+          ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
+          ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: package
+          name: package-${{ matrix.arch }}
           path: dist/*
 
       # The manual variant built with V=s and printed the build progress right
@@ -101,12 +123,16 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: build-logs
+          name: build-logs-${{ matrix.arch }}
           path: out/logs/
           if-no-files-found: ignore
 
+      # Only the two canonical jobs write to the release: 25.12 (apk) and
+      # 22.03 (ipk). The other branches build and verify the package but are
+      # not published — otherwise identical .ipk filenames would overwrite
+      # each other.
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.publish
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
