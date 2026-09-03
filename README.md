@@ -114,6 +114,38 @@ package and the client binary, and starts the service back up. Settings in
 
 ## Uninstalling
 
+One command on the router:
+
+```sh
+sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/uninstall.sh)"
+```
+
+What the script does:
+
+1. Stops the service and disables it (removes the autostart link).
+2. Removes both packages in a single `apk del` call — the i18n package
+   and the main one.
+3. Removes the client binary from `/opt/trusttunnel_client`, the cached
+   data and — if they survived from the original package — the lists, the
+   cron job and the dnsmasq include.
+4. Offers to remove the `trusttunnel` firewall zone and forwarding rule
+   (default: yes) and the settings in `/etc/config/trusttunnel`
+   (default: no — a reinstall then keeps your configuration).
+5. Restarts `rpcd` and clears the LuCI caches so the menu and pages
+   forget the removed package, then checks that no table, rule or route
+   is left in the kernel.
+
+Flags:
+
+- `-y` — answer yes to every question: remove the firewall zone and the
+  settings too;
+- `-c` — keep `/etc/config/trusttunnel`, do not ask.
+
+The dependencies (`kmod-tun`, `ip-full`, `curl`, `ca-bundle`) are left
+alone — they are shared and may be needed by other packages.
+
+If you prefer to uninstall by hand, step by step:
+
 ```sh
 /etc/init.d/trusttunnel stop
 /etc/init.d/trusttunnel disable

@@ -33,7 +33,8 @@ jobs:
           packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config
           packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing
           packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export
-          install.sh"
+          install.sh
+          uninstall.sh"
           fail=0
           for f in $need; do
             mode=$(git ls-files -s -- "$f" | awk '{print $1}')
@@ -60,6 +61,7 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh \
             install.sh \
+            uninstall.sh \
             tests/run.sh \
             packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/records.sh \
             packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config \
