@@ -30,43 +30,44 @@ assert_contains "$dump" "ip6 daddr @tt_endpoint6 return" "same for ipv6 endpoint
 assert_contains "$dump" "192.168.0.0/16" "excludes private destinations"
 assert_contains "$dump" "fc00::/7" "excludes ipv6 private destinations"
 
-# Единственный режим — всё через VPN: маркируется всё, что дошло до правила.
+# The single mode is everything-through-VPN: everything that reaches the rule
+# is marked.
 assert_contains "$dump" "meta mark set 0x9527" "marks everything"
 assert_eq "0" "$(printf '%s\n' "$dump" | grep -c '@tt_bypass')" "does not consult any bypass set"
 assert_eq "0" "$(printf '%s\n' "$dump" | grep -c 'hook output')" "no output chain unless requested"
 assert_contains "$dump_router" "type route hook output priority mangle" "router traffic chain when requested"
 assert_contains "$dump_router" 'oifname "tun*" return' "skips traffic already leaving into the tunnel"
 
-# Перехвата DNS в fork нет вовсе: ни в каком режиме.
+# There is no DNS interception in the fork at all: in no mode.
 assert_eq "0" "$(printf '%s\n' "$dump" | grep -c 'dstnat')" "no dns redirect chains"
 
 assert_exit 1 "rejects an unknown subcommand" sh "$R" bogus "$TT_TEST_TMP/up.tsv"
 
-# `up` и `down` меняют состояние ядра, поэтому проверяются через заглушки:
-# TT_IP и TT_NFT для этого и существуют. Логируем argv и сверяем сам набор
-# команд — иначе killswitch-маршрут, приоритет ip rule и порядок разборки
-# остаются проверенными только чтением, а это самый рискованный непокрытый
-# код в проекте.
+# `up` and `down` change the kernel state, so they are tested via stubs:
+# TT_IP and TT_NFT exist for exactly that. We log argv and verify the actual
+# command set — otherwise the killswitch route, the ip rule priority and the
+# teardown order would remain checked only by reading, and that is the
+# riskiest untested code in the project.
 stub="$TT_TEST_TMP/bin"
 mkdir -p "$stub"
 LOG="$TT_TEST_TMP/cmd.log"
 cat > "$stub/ip" <<'IPSTUB'
 #!/bin/sh
 printf 'ip %s\n' "$*" >> "$TT_CMD_LOG"
-# link show ОБЯЗАН завершаться успешно: attach и client_device проверяют им,
-# что устройство клиента существует, и отказ здесь ронял бы привязку. Раньше
-# стаб возвращал 1, чтобы `up` пошёл по ветке создания устройства, — этой ветки
-# больше нет, устройство создаёт клиент.
+# link show MUST succeed: attach and client_device use it to check that the
+# client device exists, and a failure here would drop the attach. The stub
+# used to return 1 so that `up` would take the device-creation branch — that
+# branch no longer exists, the client creates the device.
 exit 0
 IPSTUB
 cat > "$stub/nft" <<'NFTSTUB'
 #!/bin/sh
 printf 'nft %s\n' "$*" >> "$TT_CMD_LOG"
 
-# stdin читается ТОЛЬКО у `nft -f -`. Безусловный `cat` нельзя: nft вызывается
-# и без конвейера (`nft delete table …`), и тогда `cat` ждёт ввода вечно —
-# тестовый набор подвисает вместо того чтобы упасть, а зависание не
-# диагностируется.
+# stdin is read ONLY by `nft -f -`. An unconditional `cat` is impossible: nft
+# is also called without a pipe (`nft delete table …`), and then `cat` waits
+# for input forever — the test suite would hang instead of failing, and a
+# hang is not diagnosable.
 if [ "$1" = "-f" ] && [ "$2" = "-" ]; then
 	_batch=$(mktemp)
 	cat > "$_batch"
@@ -81,21 +82,23 @@ export TT_CMD_LOG="$LOG"
 : > "$LOG"
 TT_IP="$stub/ip" TT_NFT="$stub/nft" sh "$R" up "$TT_TEST_TMP/up.tsv" "$TT_TEST_TMP/nowhere" >/dev/null 2>&1
 up_log="$(cat "$LOG")"
-# Устройство больше НЕ наше: его создаёт клиент. Раньше здесь проверялось
-# `ip tuntap add` — теперь наоборот, проверяется, что up ничего не создаёт.
-# Причина смены: ключей device_name/use_existing в схеме клиента не существует,
-# он всегда делает своё устройство, а созданное нами оставалось без носителя —
-# маршрут указывал в мёртвый интерфейс и помеченный трафик отбрасывался.
+# The device is no longer ours: the client creates it. Previously `ip tuntap
+# add` was asserted here — now it is the opposite: up must create nothing.
+# The reason for the change: the client schema has no device_name/use_existing
+# keys, it always makes its own device, and the one we created was left
+# without a carrier — the route pointed into a dead interface and marked
+# traffic was dropped.
 assert_eq "0" "$(grep -c 'tuntap add' "$LOG")" "up does not create a tun device"
 assert_eq "0" "$(grep -c 'link set dev' "$LOG")" "up does not touch a device"
-# Маршрута по умолчанию на этом этапе тоже быть не должно: привязываться пока
-# не к чему, и до появления устройства клиента трафик держит blackhole.
+# There must be no default route at this stage either: there is nothing to
+# attach to yet, and until the client device appears the blackhole holds the
+# traffic.
 assert_eq "0" "$(grep -c 'route replace default' "$LOG")" "up installs no default route yet"
 assert_contains "$up_log" "ip route replace blackhole default table 880 metric 1000" "up installs the killswitch blackhole route"
 assert_contains "$up_log" "ip rule add fwmark 0x9527 table 880 priority 30820" "up installs the fwmark rule"
 assert_contains "$up_log" "ip -6 rule add fwmark 0x9527 table 880 priority 30820" "up installs the ipv6 fwmark rule"
 
-# Правила загружаются одной транзакцией.
+# The rules are loaded in a single transaction.
 NFT_IN="$TT_TEST_TMP/nft.stdin"
 : > "$LOG"; : > "$NFT_IN"
 TT_NFT_STDIN="$NFT_IN" TT_IP="$stub/ip" TT_NFT="$stub/nft" \
@@ -104,19 +107,19 @@ fed="$(cat "$NFT_IN")"
 assert_contains "$fed" "table inet trusttunnel {" "ruleset is fed to nft"
 assert_contains "$fed" "meta mark set 0x9527" "the mark rule is in the fed ruleset"
 
-# attach — отдельная операция, которая и ставит маршрут, на устройство клиента.
+# attach is a separate operation that installs the route onto the client device.
 : > "$LOG"
 TT_IP="$stub/ip" TT_NFT="$stub/nft" sh "$R" attach "$TT_TEST_TMP/up.tsv" "$TT_TEST_TMP" tun7 >/dev/null 2>&1
 attach_log="$(cat "$LOG")"
 assert_contains "$attach_log" "ip route replace default dev tun7 table 880 metric 1" "attach installs the default route via the client device"
 assert_eq "tun7" "$(cat "$TT_TEST_TMP/device" 2>/dev/null)" "attach records the client device name"
 
-# metric 1 против blackhole на 1000: маршрут клиента ОБЯЗАН перекрывать
-# killswitch, иначе привязка не даёт ничего.
+# metric 1 against the blackhole at 1000: the client route MUST outweigh the
+# killswitch, otherwise the attach gives nothing.
 assert_contains "$attach_log" "table 880 metric 1" "attach uses a metric above the blackhole"
 
-# detach снимает маршрут, но НЕ blackhole: пока служба считается работающей,
-# помеченный трафик не должен уходить в основную таблицу.
+# detach removes the route but NOT the blackhole: while the service counts as
+# running, marked traffic must not leak into the main table.
 : > "$LOG"
 TT_IP="$stub/ip" TT_NFT="$stub/nft" sh "$R" detach "$TT_TEST_TMP/up.tsv" "$TT_TEST_TMP" >/dev/null 2>&1
 detach_log="$(cat "$LOG")"
@@ -130,14 +133,14 @@ down_log="$(cat "$LOG")"
 assert_contains "$down_log" "nft delete table inet trusttunnel" "down removes the nft table"
 assert_contains "$down_log" "ip rule del fwmark 0x9527 table 880 priority 30820" "down removes the fwmark rule"
 assert_contains "$down_log" "ip route flush table 880" "down flushes the routing table"
-# Устройство клиента НЕ удаляем — оно не наше.
+# The client device is NOT deleted — it is not ours.
 assert_eq "0" "$(grep -c 'link del' "$LOG")" "down does not delete the client device"
-# Разборка идёт в обратном порядке: сначала nft, только потом маршруты, иначе
-# правила ссылались бы на уже снятую таблицу.
+# The teardown goes in reverse order: nft first, routes only after, otherwise
+# the rules would reference an already removed table.
 assert_eq "0" "$(printf '%s\n' "$down_log" | awk '/ip route flush table/{seen_rt=NR} /nft delete table/{seen_nft=NR} END{print (seen_nft && seen_rt && seen_nft < seen_rt) ? 0 : 1}')" \
 	"down tears the nft table down before the routes"
 
-# Без killswitch маршрут blackhole ставиться не должен.
+# Without the killswitch no blackhole route must be installed.
 cat > "$TT_TEST_TMP/nobh.tsv" <<'EOF'
 network.fwmark	0x9527
 network.lan_devices	br-lan
@@ -147,10 +150,10 @@ EOF
 TT_IP="$stub/ip" TT_NFT="$stub/nft" sh "$R" up "$TT_TEST_TMP/nobh.tsv" "$TT_TEST_TMP/nowhere" >/dev/null 2>&1
 assert_eq "0" "$(grep -c 'blackhole' "$LOG")" "no blackhole route when the killswitch is disabled"
 
-# Каждое правило обязано стоять на своей строке. Ассерты на подстроки этого не
-# ловят: при склейке двух правил в одну строку все ожидаемые подстроки остаются
-# на месте, а nftables отвергает файл целиком. Поэтому проверяем именно то, что
-# подстрочная проверка увидеть не может.
+# Every rule must sit on its own line. Substring asserts do not catch this:
+# when two rules are glued into one line all expected substrings remain in
+# place while nftables rejects the whole file. So we check exactly what a
+# substring check cannot see.
 assert_eq "0" "$(printf '%s\n' "$dump" | grep -c 'return[[:space:]]\+[a-z]')" \
 	"no statement shares a line with a return verdict"
 assert_eq "0" "$(printf '%s\n' "$dump" | grep -c 'mark set.*}')" \

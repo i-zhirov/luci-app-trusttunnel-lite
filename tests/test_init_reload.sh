@@ -1,18 +1,18 @@
 #!/bin/sh
-# Применение настроек: apply_settings и сохранение маршрутизации на перезапуске.
+# Applying settings: apply_settings and keeping routing across a restart.
 #
-# ЗАЧЕМ. Save & Apply приходит в reload_service. Раньше тот безусловно звал
-# restart, и любая правка убивала клиента: туннель рвался на несколько секунд,
-# а вместе с nft-таблицей на это время исчезала маркировка, так что помеченный
-# трафик LAN успевал уйти НАПРЯМУЮ — то есть обычное сохранение настроек само
-# открывало утечку, от которой этот пакет и защищает.
+# WHY. Save & Apply lands in reload_service. It used to unconditionally call
+# restart, and any edit killed the client: the tunnel tore for a few seconds,
+# and together with the nft table the marking disappeared for that time, so
+# marked LAN traffic could slip out DIRECTLY — an ordinary settings save
+# itself opened the leak this package protects against.
 #
-# Теперь reload_service спрашивает classify_change, что именно требуется, и на
-# перезапуске маршрутизация переживает цикл stop+start. Здесь проверяются оба
-# решения и, что важнее, их откаты: неудача на дешёвом пути обязана
-# заканчиваться полным перезапуском, а прерванный старт — настоящим разбором
-# маршрутизации, иначе таблица и правило по отметке остались бы висеть,
-# указывая на то, чего больше нет.
+# Now reload_service asks classify_change what exactly is required, and across
+# a restart the routing survives the stop+start cycle. Both decisions are
+# checked here and, more importantly, their rollbacks: a failure on the cheap
+# path must end in a full restart, and an interrupted start — in a real
+# routing teardown, otherwise the table and the mark rule would remain
+# hanging, pointing at something that no longer exists.
 . "$(dirname "$0")/lib.sh"
 
 INIT="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel"
@@ -24,8 +24,8 @@ mkdir -p "$bin" "$sandbox/lib" "$sandbox/out"
 TT_CALLS="$sandbox/calls"
 export TT_CALLS
 
-# Заглушки-скрипты пишут свои вызовы в журнал: ни procd, ни UCI, ни настоящего
-# routing на машине разработчика нет, судить приходится по нему.
+# The stub scripts write their calls to a log: there is no procd, UCI or real
+# routing on the developer machine, so it is the only evidence to judge by.
 cat > "$sandbox/lib/routing" <<'EOF'
 #!/bin/sh
 echo "routing $1" >> "$TT_CALLS"
@@ -39,8 +39,8 @@ cat > "$sandbox/lib/uci-export" <<'EOF'
 cat "$TT_NEXT"
 EOF
 
-# Сертификат в records не попадает (PEM многострочный), поэтому apply_settings
-# сверяет его отдельным вызовом uci.
+# The certificate never lands in records (PEM is multi-line), so apply_settings
+# compares it with a separate uci call.
 cat > "$bin/uci" <<'EOF'
 #!/bin/sh
 cat "$TT_CERT_UCI" 2>/dev/null
@@ -54,8 +54,8 @@ export PATH
 # shellcheck disable=SC1090
 . "$INIT"
 
-# Пути вычислены на верхнем уровне init-скрипта от /var, поэтому
-# переопределяются здесь оба: и каталог, и файл записи внутри него.
+# The paths are computed at the top level of the init script relative to /var,
+# so both are overridden here: the directory and the records file inside it.
 OUTDIR="$sandbox/out"
 RECORDS="$OUTDIR/settings.tsv"
 LIBDIR="$sandbox/lib"
@@ -65,9 +65,9 @@ TT_CERT_UCI="$sandbox/cert_uci"
 export TT_NEXT TT_CERT_UCI
 : > "$TT_CERT_UCI"
 
-# Всё, что за пределами предмета проверки, заменяется журналируемыми
-# заглушками. regenerate подменяется в том числе потому, что настоящий
-# перекладывает records сам — а тесту нужно видеть, дошло ли до него дело.
+# Everything outside the scope of the check is replaced with logging stubs.
+# regenerate is stubbed out among others because the real one moves records
+# itself — and the test needs to see whether it got that far.
 restart() { echo "restart keep_routing=${_TT_KEEP_ROUTING:-0}" >> "$TT_CALLS"; }
 regenerate() {
 	echo "regenerate" >> "$TT_CALLS"
@@ -89,7 +89,7 @@ network.lan_devices	br-lan
 EOF
 }
 
-# Готовит применённое состояние и предполагаемое новое, чистит журнал.
+# Prepares the applied state and the presumed new one, clears the log.
 setup() {
 	base_records > "$RECORDS"
 	base_records > "$TT_NEXT"
@@ -98,58 +98,58 @@ setup() {
 	export ROUTING_UP_RC REGEN_RC UCI_EXPORT_RC
 }
 
-# --- Дешёвый путь -------------------------------------------------------------
+# --- Cheap path -------------------------------------------------------------
 
-# Правка LAN-интерфейсов до client.toml не доходит, поэтому клиента трогать не
-# за что: перегенерировать, перезалить в ядро и перепривязать маршрут на ЖИВОЕ
-# устройство.
+# An edit of the LAN interfaces never reaches client.toml, so there is no
+# reason to touch the client: regenerate, reload into the kernel and re-attach
+# the route to the LIVE device.
 setup
 printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 apply_settings
 
 assert_eq "" "$(no_call 'restart')" \
-	"правка LAN-интерфейсов не перезапускает клиента"
+	"an edit of the LAN interfaces does not restart the client"
 assert_contains "$(calls)" "routing up" \
-	"но правила перезаливаются в ядро"
+	"but the rules are reloaded into the kernel"
 assert_contains "$(calls)" "routing reattach" \
-	"и маршрут перепривязывается к живому устройству"
+	"and the route is re-attached to the live device"
 
-# Запись о применённом состоянии обязана догонять: следующее применение
-# сравнивает с ней, и без обновления та же правка считалась бы изменением
-# каждый раз.
+# The record of the applied state must keep up: the next apply compares with
+# it, and without an update the same edit would count as a change every time.
 assert_contains "$(cat "$RECORDS")" "br-guest" \
-	"запись о применённом состоянии обновлена"
+	"the applied-state record is updated"
 
-# --- Перезапуск с сохранением маршрутизации -----------------------------------
+# --- Restart keeping routing --------------------------------------------------
 
 setup
 sed -i '' 's/a.example/b.example/' "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=1" \
-	"смена адреса сервера перезапускает клиента, не разбирая маршрутизацию"
+	"changing the server address restarts the client without tearing down routing"
 
 setup
 printf 'domains.direct\tbank.example\n' >> "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=1" \
-	"новое исключение перезапускает клиента, не разбирая маршрутизацию"
+	"a new exclusion restarts the client without tearing down routing"
 
-# --- Перезапуск с полным разбором ---------------------------------------------
+# --- Restart with a full teardown ---------------------------------------------
 
-# Номер таблицы и отметка — единственные значения, по которым маршрутизация
-# снимается. Сохранить прежнюю и поднять новую значило бы оставить старую
-# таблицу и старое правило висеть навсегда.
+# The table number and the mark are the only values that tear routing down.
+# Keeping the old one and bringing up the new one would leave the old table
+# and the old rule hanging forever.
 setup
-# \t как эскейп в скрипте s/// понимает не всякий sed (BSD — нет), а в
-# awk-строке он одинаков везде, поэтому замена идёт через awk.
+# Not every sed understands \t as an escape in an s/// script (BSD does not),
+# while in an awk string it behaves the same everywhere, so the replacement
+# goes through awk.
 awk 'BEGIN { OFS = "\t" } $1 == "network.table" { $2 = "881" } { print }' \
 	"$TT_NEXT" > "$TT_NEXT.tmp" && mv "$TT_NEXT.tmp" "$TT_NEXT"
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
-	"смена номера таблицы разбирает маршрутизацию полностью"
+	"changing the table number tears routing down completely"
 
 setup
 awk 'BEGIN { OFS = "\t" } $1 == "main.enabled" { $2 = "0" } { print }' \
@@ -157,21 +157,22 @@ awk 'BEGIN { OFS = "\t" } $1 == "main.enabled" { $2 = "0" } { print }' \
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
-	"выключение службы разбирает маршрутизацию полностью"
+	"disabling the service tears routing down completely"
 
-# --- Сертификат ---------------------------------------------------------------
+# --- Certificate ---------------------------------------------------------------
 
-# Единственное значение схемы, которого в records нет: PEM многострочный.
-# Без отдельной сверки смена сертификата не применялась бы вовсе — records
-# при ней не меняется, и дешёвый путь решил бы, что делать нечего.
+# The only schema value absent from records: PEM is multi-line. Without a
+# separate comparison a certificate change would never be applied — records
+# does not change with it, and the cheap path would decide there is nothing
+# to do.
 setup
 printf -- '-----BEGIN CERTIFICATE-----\nnew\n-----END CERTIFICATE-----\n' > "$TT_CERT_UCI"
 apply_settings
 
 assert_contains "$(calls)" "restart" \
-	"смена сертификата перезапускает клиента, хотя records не изменился"
+	"a certificate change restarts the client even though records did not change"
 
-# И наоборот: неизменный сертификат не должен сам по себе вызывать перезапуск.
+# And vice versa: an unchanged certificate must not by itself cause a restart.
 setup
 printf -- '-----BEGIN CERTIFICATE-----\nsame\n-----END CERTIFICATE-----\n' > "$TT_CERT_UCI"
 cp "$TT_CERT_UCI" "$OUTDIR/endpoint.pem"
@@ -179,22 +180,22 @@ printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 apply_settings
 
 assert_eq "" "$(no_call 'restart')" \
-	"неизменный сертификат не мешает дешёвому пути"
+	"an unchanged certificate does not block the cheap path"
 rm -f "$OUTDIR/endpoint.pem"
 : > "$TT_CERT_UCI"
 
-# --- Откаты -------------------------------------------------------------------
+# --- Rollbacks -----------------------------------------------------------------
 
-# Отказ на дешёвом пути обязан заканчиваться полным перезапуском: правила в
-# ядре в этот момент в неизвестном состоянии, и оставить всё как есть значило
-# бы показывать работающую службу поверх недогруженной таблицы.
+# A failure on the cheap path must end in a full restart: at that moment the
+# rules in the kernel are in an unknown state, and leaving things as they are
+# would mean showing a working service on top of an under-loaded table.
 setup
 printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 ROUTING_UP_RC=1
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
-	"провал routing up откатывает к полному перезапуску"
+	"a routing up failure rolls back to a full restart"
 
 setup
 printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
@@ -202,67 +203,69 @@ REGEN_RC=1
 apply_settings
 
 assert_contains "$(calls)" "restart keep_routing=0" \
-	"провал перегенерации откатывает к полному перезапуску"
+	"a regeneration failure rolls back to a full restart"
 
-# Сравнивать не с чем — это обычный старт, а не применение поверх известного
-# состояния. /var на OpenWrt в tmpfs, поэтому после перезагрузки записи нет.
+# There is nothing to compare with — this is a plain start, not an apply on
+# top of a known state. /var on OpenWrt lives in tmpfs, so after a reboot
+# there is no record.
 setup
 rm -f "$RECORDS"
 apply_settings
 
 assert_contains "$(calls)" "restart" \
-	"без записи о применённом состоянии — полный путь"
+	"with no applied-state record — the full path"
 
-# Служба не работает: применять поверх ничего нечего.
+# The service is not running: there is nothing to apply on top of.
 setup
 printf 'network.lan_devices\tbr-lan br-guest\n' >> "$TT_NEXT"
 RUNNING_RC=1
 apply_settings
 
 assert_contains "$(calls)" "restart" \
-	"остановленная служба применяется полным путём"
+	"a stopped service is applied via the full path"
 unset RUNNING_RC
 
-# Не удалось выгрузить UCI — сравнивать не с чем, решение принимать не на чем.
+# UCI export failed — there is nothing to compare with, no basis for a decision.
 setup
 UCI_EXPORT_RC=1
 apply_settings
 
 assert_contains "$(calls)" "restart" \
-	"провал выгрузки UCI откатывает к полному перезапуску"
+	"a UCI export failure rolls back to a full restart"
 assert_eq "0" "$(ls "$OUTDIR" | grep -c 'settings.tsv.next' || true)" \
-	"и не оставляет за собой недописанный файл с паролем внутри"
+	"and leaves no half-written file with a password behind"
 
-# --- Маршрутизация переживает перезапуск --------------------------------------
+# --- Routing survives a restart ------------------------------------------------
 
-# Проверяется настоящий stop_service, а не заглушка: именно он решает, звать
-# ли routing down.
+# The real stop_service is checked, not a stub: it is the one that decides
+# whether to call routing down.
 setup
 _TT_KEEP_ROUTING=1
 stop_service
 
 assert_eq "" "$(no_call 'routing down')" \
-	"на перезапуске с сохранением маршрутизация не разбирается"
+	"on a restart with keep-routing the routing is not torn down"
 
 setup
 _TT_KEEP_ROUTING=0
 stop_service
 
 assert_contains "$(calls)" "routing down" \
-	"обычный stop разбирает маршрутизацию как раньше"
+	"a plain stop tears routing down as before"
 
-# Прерванный старт. Расчёт «разбирать не нужно» держится на том, что start
-# поднимет всё заново; если он не дошёл до конца — служба выключена, а
-# таблица, правило по отметке и blackhole остались бы висеть, указывая на
-# несуществующий туннель. Помеченный трафик уходил бы в blackhole при
-# выключенном обходе, и в интерфейсе это выглядело бы как «нет интернета».
+# An interrupted start. The "no teardown needed" reasoning rests on start
+# bringing everything up again; if it does not reach the end, the service is
+# off while the table, the mark rule and the blackhole would remain hanging,
+# pointing at a non-existent tunnel. Marked traffic would go into the
+# blackhole with the bypass off, and in the UI it would look like "no
+# internet".
 setup
 _TT_KEEP_ROUTING=1
 abort_restart_cleanup
 
 assert_contains "$(calls)" "routing down" \
-	"прерванный старт разбирает сохранённую маршрутизацию"
+	"an interrupted start tears down the kept routing"
 assert_eq "0" "${_TT_KEEP_ROUTING}" \
-	"признак сбрасывается, чтобы повторный вызов не разбирал дважды"
+	"the flag is reset so a repeated call does not tear down twice"
 
 tt_test_summary

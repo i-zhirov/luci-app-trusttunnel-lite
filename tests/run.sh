@@ -1,5 +1,5 @@
 #!/bin/sh
-# Запускает все тест-файлы, каждый в своём временном каталоге.
+# Runs all test files, each in its own temporary directory.
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
@@ -8,9 +8,9 @@ for t in tests/test_*.sh; do
 	echo "== $t"
 	TT_TEST_TMP="$(mktemp -d)"
 	export TT_TEST_TMP
-	# stdin закрывается для каждого теста: ничто не должно читать его.
-	# Заглушка или команда, случайно ждущая ввода, должна упасть сразу,
-	# а не подвесить весь набор.
+	# stdin is closed for each test: nothing should read it.
+	# A stub or command accidentally waiting for input must fail right away,
+	# not hang the whole suite.
 	if ! sh "$t" < /dev/null; then
 		rc=1
 	fi

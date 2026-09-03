@@ -1,5 +1,5 @@
-# Ассерты для тестов. Подключается через `. "$(dirname "$0")/lib.sh"`.
-# POSIX sh: счётчики держим в файлах, чтобы они переживали подоболочки.
+# Asserts for the tests. Sourced via `. "$(dirname "$0")/lib.sh"`.
+# POSIX sh: counters are kept in files so they survive subshells.
 
 TT_TEST_TMP="${TT_TEST_TMP:-$(mktemp -d)}"
 export TT_TEST_TMP

@@ -8,14 +8,14 @@ FULL=tests/fixtures/records/full.tsv
 out_min="$(sh "$GEN" "$MIN")"
 out_full="$(sh "$GEN" "$FULL")"
 
-# Значения, обязательные для роутера и не настраиваемые пользователем.
+# Values that are mandatory for the router and not user-configurable.
 assert_contains "$out_min" 'vpn_mode = "general"' "vpn_mode is always general"
 assert_contains "$out_min" 'killswitch_enabled = false' "client killswitch is off"
 assert_contains "$out_min" 'exclusions_tcp_early_ack_enabled = true' "early ack is on"
-# device_name и use_existing больше НЕ генерируются: таких ключей в схеме
-# клиента не существует, он их молча игнорировал и создавал своё устройство,
-# а созданное нами оставалось без носителя — помеченный трафик отбрасывался.
-# Проверяется обратное: что выдуманных ключей в конфиге не осталось.
+# device_name and use_existing are no longer generated: the client schema has
+# no such keys, it silently ignored them and made its own device, while the
+# one we created was left without a carrier — marked traffic was dropped.
+# The opposite is checked: that no invented keys remain in the config.
 assert_eq "0" "$(printf '%s' "$out_min" | grep -c 'use_existing')" "no invented use_existing key"
 assert_eq "0" "$(printf '%s' "$out_min" | grep -c 'device_name')" "no invented device_name key"
 assert_contains "$out_min" 'included_routes = []' "client does not manage routes"
@@ -49,8 +49,8 @@ assert_contains "$out_full" 'password = "pa\"ss\\with"' "escapes quotes and back
 assert_contains "$out_full" 'exclusions = ["bank.example", "*.local.example"]' \
 	"direct domains become client exclusions"
 
-# Сертификат приходит вторым аргументом как файл, а не через records:
-# в records значение не может содержать перевод строки, а PEM многострочный.
+# The certificate arrives as a file via the second argument, not through
+# records: a records value cannot contain a newline, and PEM is multi-line.
 printf -- '-----BEGIN CERTIFICATE-----\nMIIBdummy\n-----END CERTIFICATE-----\n' \
 	> "$TT_TEST_TMP/cert.pem"
 out_cert="$(sh "$GEN" "$MIN" "$TT_TEST_TMP/cert.pem")"
@@ -58,7 +58,7 @@ assert_contains "$out_cert" "certificate = '''" "emits a multi-line literal for 
 assert_contains "$out_cert" "-----END CERTIFICATE-----" "PEM body is copied verbatim"
 assert_contains "$out_min" 'certificate = ""' "empty certificate when no PEM file is given"
 
-# Валидация обязательных полей.
+# Validation of mandatory fields.
 printf 'main.enabled\t1\n' > "$TT_TEST_TMP/bare.tsv"
 assert_exit 1 "fails without endpoint credentials" sh "$GEN" "$TT_TEST_TMP/bare.tsv"
 
