@@ -1,27 +1,25 @@
 #!/bin/sh
 # Installer for luci-app-trusttunnel-lite for OpenWrt 22.03+.
 #
-# Installs from the package repositories hosted on the repo branch of this
-# project on GitHub: a signed apk repository (apk/ subdirectory) on 25.12+,
-# a signed opkg repository (opkg/ subdirectory) on 22.03-24.10. The package
-# manager is detected automatically. The repository stays configured on the
-# router after the install, so later updates are a plain `apk update &&
-# apk upgrade` (or `opkg update && opkg upgrade`) — re-running the installer
-# is only needed for the client binary.
+# Installs from the package repositories hosted on this project's GitHub
+# Pages site (published from the repo branch): a signed apk repository
+# (apk/ subdirectory) on 25.12+, a signed opkg repository (opkg/
+# subdirectory) on 22.03-24.10. The package manager is detected
+# automatically. The repository stays configured on the router after the
+# install, so later updates are a plain `apk update && apk upgrade` (or
+# `opkg update && opkg upgrade`) — re-running the installer is only needed
+# for the client binary.
 #
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
 #
 # Environment overrides:
-#   TT_REPO     — GitHub repository that hosts the repo branch
-#                 (default: this repository)
 #   TT_REPO_URL — repository base URL; apk fetches <url>/apk/packages.adb
 #                 from it and opkg appends /Packages.gz to <url>/opkg
-#                 (default: https://raw.githubusercontent.com/$TT_REPO/repo
-#                 — useful for a mirror or a test server)
+#                 (default: the GitHub Pages site of this repository —
+#                 useful for a fork, a mirror or a test server)
 set -e
 
-REPO="${TT_REPO:-i-zhirov/luci-app-trusttunnel-lite}"
-REPO_URL="${TT_REPO_URL:-https://raw.githubusercontent.com/$REPO/repo}"
+REPO_URL="${TT_REPO_URL:-https://i-zhirov.github.io/luci-app-trusttunnel-lite}"
 # The public halves of the two signing keys travel next to the repositories
 # they secure (key-build.pub signs the apk index packages.adb, opkg-key.pub
 # signs the opkg index Packages.gz) and are fetched from the same URLs. The

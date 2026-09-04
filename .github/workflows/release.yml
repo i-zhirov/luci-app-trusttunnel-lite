@@ -220,18 +220,19 @@ jobs:
         with:
           files: dist/*.${{ matrix.ext }}
 
-  # Assembles the repo branch that install.sh configures the routers to use:
-  # apk/ (packages + signed packages.adb + key-build.pub) and opkg/
-  # (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub), served
-  # via raw.githubusercontent.com.
+  # Assembles the repo branch that install.sh configures the routers to
+  # use: apk/ (packages + signed packages.adb + key-build.pub) and opkg/
+  # (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub). GitHub
+  # Pages is configured to publish this branch, so the repositories are
+  # served from https://i-zhirov.github.io/luci-app-trusttunnel-lite/.
   #
-  # Both repositories live on the same branch, not in the GitHub releases:
+  # Both repositories live on the Pages site, not in the GitHub releases:
   # the translation package's version contains a '~' (LuCI's findrev
   # format), and GitHub release asset names cannot contain '~' (it is
   # silently replaced with '.'), while apk reconstructs package file names
   # from the version verbatim. Git file names have no such restriction, so
-  # the branch serves the indexes and the packages unchanged — and the opkg
-  # repository shares the same location for consistency.
+  # the branch (and Pages) serves the indexes and the packages unchanged —
+  # and the opkg repository shares the same location for consistency.
   publish-repo:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
