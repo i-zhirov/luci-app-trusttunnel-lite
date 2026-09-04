@@ -248,6 +248,31 @@ jobs:
         with:
           name: package-22.03.7
           path: staging/opkg
+      # The .apk is built once, on the 25.12 SDK, and the signed index
+      # (packages.adb) is what install.sh hands to apk on 25.12+ routers.
+      # Nothing would notice a broken index or a mismatched signing key
+      # until a user's apk update — so the repository is verified HERE,
+      # exactly as install.sh configures it: the key in /etc/apk/keys,
+      # the index URL in /etc/apk/repositories.d. A signature apk does
+      # not trust is skipped with "UNTRUSTED signature", which makes the
+      # install below fail.
+      - name: Verify the apk installs on 25.12
+        run: |
+          docker run --rm \
+            -v "$PWD/staging/apk:/repo:ro" \
+            openwrt/rootfs:x86-64-25.12.0 \
+            sh -c '
+              mkdir -p /etc/apk/keys /etc/apk/repositories.d
+              cp /repo/key-build.pub /etc/apk/keys/trusttunnel.pub
+              # apk fetches the index at the URL verbatim; a bare
+              # directory URL would make it look for Alpine-style
+              # APKINDEX.tar.gz instead (see install.sh).
+              echo "file:///repo/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
+              apk update
+              # Resolves the real dependencies (luci-base, kmod-tun,
+              # curl, ...) against the version'"'"'s official feeds.
+              apk add luci-app-trusttunnel-lite
+            '
       # The ipk is built once, on the oldest SDK (22.03), and the release
       # design relies on it installing on 23.05/24.10 because the
       # dependencies are unversioned. That claim is verified HERE, on the
