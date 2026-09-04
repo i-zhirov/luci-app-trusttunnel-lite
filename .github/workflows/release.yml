@@ -22,6 +22,8 @@ permissions:
   id-token: write
 
 jobs:
+  # The noarch LuCI package: built once per package-manager generation, on
+  # the canonical x86-64 SDK.
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -44,9 +46,8 @@ jobs:
           # on every SDK — the axis that actually changes the build is the
           # OpenWrt VERSION (luci.mk, opkg vs apk, findrev versioning), and it
           # is covered by the two branches above, both built on the same
-          # canonical x86-64 SDK. The client binary is not part of the package
-          # at all: install.sh downloads it at install time and checks it
-          # against uname -m itself.
+          # canonical x86-64 SDK. The arch-specific trusttunnel-client is NOT
+          # built here: the build-client job covers every architecture.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -115,85 +116,6 @@ jobs:
           ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
           ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
-      # The repository indexes that install.sh's repository flow needs.
-      # Each publish job produces the index of its format (packages.adb for
-      # apk, Packages/Packages.gz/Packages.sig for opkg) plus the public
-      # signing key; the publish-repo job below assembles them into the
-      # Pages site, which is what the routers actually consume. The GitHub
-      # release itself carries only the package files, for manual download.
-      #
-      # The package manager's expectations differ:
-      #   apk  — the repository entry names the index file explicitly
-      #          (<url>/apk/packages.adb) and apk fetches it as-is;
-      #   opkg — the feed URL must NOT name the index (opkg appends
-      #          /Packages.gz), and the signature covers the UNCOMPRESSED
-      #          Packages because opkg-key zcat's the list before verifying.
-      # The package files are referenced by the indexes exactly by their
-      # file names, so the fetches resolve within the same site.
-      - name: Build the apk repository index
-        if: matrix.ext == 'apk'
-        env:
-          SIGN_KEY: ${{ secrets.TT_APK_SIGN_KEY }}
-        run: |
-          # The private key exists only as a workflow secret; its public
-          # half (key-build.pub, committed in the repository) is carried to
-          # the repo branch and installed by install.sh into /etc/apk/keys/.
-          #
-          # alpine:edge is the only readily available apk-tools 3.x with
-          # mkndx/adbsign (stable Alpine ships apk-tools 2.14). Pinned by
-          # digest for reproducibility.
-          cp key-build.pub dist/
-          printf '%s\n' "$SIGN_KEY" > key-build.sec
-          docker run --rm \
-            -v "$PWD/dist:/repo" \
-            -v "$PWD/key-build.sec:/key-build.sec" \
-            alpine:edge@sha256:266f29255458134745f2bf588cb23ed1ed1768b96ff2580a05d70a8aba59e145 \
-            sh -c 'cd /repo && apk mkndx --output packages.adb --allow-untrusted *.apk \
-              && apk adbsign --allow-untrusted --sign-key /key-build.sec packages.adb'
-          ls -la dist/
-
-      - name: Build the opkg repository index
-        if: matrix.ext == 'ipk'
-        env:
-          SIGN_KEY: ${{ secrets.TT_OPKG_SIGN_KEY }}
-        run: |
-          # The canonical index script from the OpenWrt tree. Its $MKHASH
-          # hook is OpenWrt's host tool, replaced here by a shim over
-          # sha256sum.
-          cp opkg-key.pub dist/
-          curl -fsSL -o ipkg-make-index.sh \
-            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-22.03/scripts/ipkg-make-index.sh
-          printf '#!/bin/sh\nsha256sum "$2" | cut -d" " -f1\n' > mkhash.sh
-          chmod +x mkhash.sh
-          cd dist
-          MKHASH="$PWD/../mkhash.sh" bash ../ipkg-make-index.sh . > Packages.manifest
-          # Same field filter as OpenWrt's package/Makefile.
-          grep -vE '^(Maintainer|LicenseFiles|Source|SourceName|Require|SourceDateEpoch)' \
-            Packages.manifest > Packages
-          # Same padding workaround as OpenWrt's package/Makefile: usign
-          # has a SHA-512 bug for two specific message sizes.
-          case "$(((64 + $(stat -L -c%s Packages)) % 128))" in
-            110|111) { echo ""; echo ""; } >> Packages ;;
-          esac
-          gzip -9nc Packages > Packages.gz
-          cd ..
-          # Sign the UNCOMPRESSED Packages inside the OpenWrt rootfs image:
-          # it carries the OpenWrt-patched usign. The private key exists
-          # only as a workflow secret; its public half (opkg-key.pub,
-          # committed in the repository) is carried to the repo branch and
-          # installed by install.sh into /etc/opkg/keys/ under its
-          # fingerprint.
-          printf '%s\n' "$SIGN_KEY" > opkg.sec
-          docker run --rm \
-            -v "$PWD/dist:/repo" \
-            -v "$PWD/opkg.sec:/opkg.sec" \
-            openwrt/rootfs:x86-64-22.03.7 \
-            sh -c 'cd /repo && usign -S -s /opkg.sec -m Packages -x Packages.sig'
-          ls -la dist/
-
-      # Uploaded AFTER the index steps: the publish-repo job consumes the
-      # packages AND the signed indexes and the public keys from this
-      # artifact, so it must contain everything dist/ has at the end.
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -213,13 +135,148 @@ jobs:
           path: out/logs/
           if-no-files-found: ignore
 
+  # The arch-specific client: built once per OpenWrt SUBTARGET architecture,
+  # per package-manager generation. Two hard facts force this matrix:
+  #
+  #  1. The vendor ships one prebuilt binary per CPU FAMILY (x86_64, aarch64,
+  #     armv7, mips, mipsel), statically linked, and packages/trusttunnel-client
+  #     downloads the family tarball by mapping $(ARCH) to the vendor name.
+  #     The binary is the same for every subtarget of the family — only the
+  #     arch LABEL in the package metadata differs.
+  #
+  #  2. apk matches the package arch against the device's own arch
+  #     byte-for-byte (verified on openwrt/rootfs:x86_64-25.12.0: a package of
+  #     a sibling arch — aarch64_cortex-a53 on aarch64_cortex-a72 — is refused
+  #     with "error: uninstallable, arch: ..."). opkg is more lenient: it
+  #     ignores foreign-arch packages in a merged feed and picks the matching
+  #     build (verified on openwrt/rootfs:x86_64-22.03.7). The apk repositories
+  #     are therefore PER-ARCHITECTURE (apk/<arch>/ on the Pages site, like the
+  #     official OpenWrt layout), while the opkg repository stays a single
+  #     merged feed.
+  #
+  # Every subtarget arch whose CPU belongs to a supported family is built:
+  # the matrix below is the complete list of such archs in the 25.12 and
+  # 22.03 release trees (all SDK images exist; the excluded arm_arm926ej-s,
+  # arm_xscale, arm_fa526, mips64_*, riscv64_*, powerpc_*, i386_*,
+  # loongarch64_* archs have no vendor build and no client package — the
+  # install.sh CPU check rejects those devices up front).
+  build-client:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # apk branch (25.12+): 20 architectures.
+          - { version: 25.12.5, ext: apk,  arch: x86_64 }
+          - { version: 25.12.5, ext: apk,  arch: aarch64_generic }
+          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a53 }
+          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a72 }
+          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a76 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a5_vfpv4 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7_neon-vfpv4 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7_vfpv4 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a8_vfpv3 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9_neon }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9_vfpv3-d16 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a15_neon-vfpv4 }
+          - { version: 25.12.5, ext: apk,  arch: mips_24kc }
+          - { version: 25.12.5, ext: apk,  arch: mips_mips32 }
+          - { version: 25.12.5, ext: apk,  arch: mipsel_24kc }
+          - { version: 25.12.5, ext: apk,  arch: mipsel_24kc_24kf }
+          - { version: 25.12.5, ext: apk,  arch: mipsel_74kc }
+          - { version: 25.12.5, ext: apk,  arch: mipsel_mips32 }
+          # opkg branch (22.03-24.10): the same list minus aarch64_cortex-a76,
+          # which exists only in the 25.12 release tree.
+          - { version: 22.03.7, ext: ipk,  arch: x86_64 }
+          - { version: 22.03.7, ext: ipk,  arch: aarch64_generic }
+          - { version: 22.03.7, ext: ipk,  arch: aarch64_cortex-a53 }
+          - { version: 22.03.7, ext: ipk,  arch: aarch64_cortex-a72 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a5_vfpv4 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7_neon-vfpv4 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7_vfpv4 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a8_vfpv3 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9_neon }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9_vfpv3-d16 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a15_neon-vfpv4 }
+          - { version: 22.03.7, ext: ipk,  arch: mips_24kc }
+          - { version: 22.03.7, ext: ipk,  arch: mips_mips32 }
+          - { version: 22.03.7, ext: ipk,  arch: mipsel_24kc }
+          - { version: 22.03.7, ext: ipk,  arch: mipsel_24kc_24kf }
+          - { version: 22.03.7, ext: ipk,  arch: mipsel_74kc }
+          - { version: 22.03.7, ext: ipk,  arch: mipsel_mips32 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Prepare the artifacts directory
+        run: mkdir -p out
+
+      # Same action and same reasons as in the build job (absolute FEED_DIR,
+      # the whole repository as the feed); the only difference is the SDK
+      # image, picked by the matrix entry.
+      - name: Build package via OpenWrt SDK Action
+        uses: openwrt/gh-action-sdk@v7
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.version }}
+          FEEDNAME: ttowrt
+          FEED_DIR: ${{ github.workspace }}
+          ARTIFACTS_DIR: ${{ github.workspace }}/out
+          PACKAGES: trusttunnel-client
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          # The apk file name carries NO arch: apk reconstructs package file
+          # names from the metadata (name-version, verified), so every apk
+          # build produces trusttunnel-client-<version>-r<release>.apk. The
+          # arch is appended here, or the 20 artifacts would overwrite each
+          # other when publish-repo merges them; publish-repo strips it back
+          # when placing the file into the per-architecture repository. The
+          # ipk name (trusttunnel-client_<version>_<arch>.ipk) already
+          # contains the arch and needs no renaming.
+          if [ "${{ matrix.ext }}" = "apk" ]; then
+            f=$(find out/bin/ -name 'trusttunnel-client*.apk' | head -n1)
+            [ -n "$f" ] || { echo "no trusttunnel-client apk was built" >&2; exit 1; }
+            cp "$f" "dist/$(basename "$f" .apk)-${{ matrix.arch }}.apk"
+            # The arch marker lets publish-repo recover the list of
+            # architectures from the artifacts instead of keeping a second
+            # copy of the matrix in a shell loop.
+            printf '%s\n' "${{ matrix.arch }}" > "dist/ARCH-${{ matrix.arch }}"
+          else
+            f=$(find out/bin/ -name 'trusttunnel-client*.ipk' | head -n1)
+            [ -n "$f" ] || { echo "no trusttunnel-client ipk was built" >&2; exit 1; }
+            cp "$f" dist/
+          fi
+          ls -la dist/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-client-${{ matrix.version }}-${{ matrix.arch }}
+          path: dist/*
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-logs-client-${{ matrix.version }}-${{ matrix.arch }}
+          path: out/logs/
+          if-no-files-found: ignore
+
   # Assembles the package repositories that install.sh configures the
   # routers to use and deploys them to GitHub Pages via the Actions
-  # deployment: apk/ (packages + signed packages.adb + key-build.pub) and
-  # opkg/ (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub),
-  # served from https://i-zhirov.github.io/luci-app-trusttunnel-lite/.
-  # Nothing is committed to any branch — the site is the workflow's direct
-  # output, so no binaries ever enter git history.
+  # deployment: apk/<arch>/ (per-architecture directories: the noarch LuCI
+  # packages, the client built for that arch, a signed packages.adb and the
+  # signing key at apk/key-build.pub) and opkg/ (one merged feed with every
+  # architecture's packages, Packages/Packages.gz/Packages.sig and
+  # opkg-key.pub), served from
+  # https://i-zhirov.github.io/luci-app-trusttunnel-lite/. Nothing is
+  # committed to any branch — the site is the workflow's direct output, so
+  # no binaries ever enter git history.
   #
   # The repositories live on the Pages site, not in the GitHub releases:
   # the translation package's version contains a '~' (LuCI's findrev
@@ -232,30 +289,147 @@ jobs:
   # Runs on tag pushes (the release flow) and on workflow_dispatch, which
   # is how a manual re-deploy of the current packages is triggered.
   publish-repo:
-    needs: build
+    needs: [build, build-client]
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      # The checkout provides the site template (repo-site/README.md).
+      # The checkout provides the site template (repo-site/) and the public
+      # halves of the signing keys (key-build.pub, opkg-key.pub).
       - uses: actions/checkout@v7
       - name: Download the apk artifacts
         uses: actions/download-artifact@v7
         with:
           name: package-25.12.5
-          path: staging/apk
+          path: staging/luci-apk
       - name: Download the opkg artifacts
         uses: actions/download-artifact@v7
         with:
           name: package-22.03.7
-          path: staging/opkg
-      # The .apk is built once, on the 25.12 SDK, and the signed index
-      # (packages.adb) is what install.sh hands to apk on 25.12+ routers.
+          path: staging/luci-ipk
+      # The client artifacts are merged per package-manager generation: the
+      # apk file names carry the appended arch (see the build-client job) and
+      # the ipk file names carry the arch natively, so nothing collides.
+      - name: Download the client artifacts (25.12 apk)
+        uses: actions/download-artifact@v7
+        with:
+          pattern: package-client-25.12.5-*
+          path: staging/apk-pkgs
+          merge-multiple: true
+      - name: Download the client artifacts (22.03 ipk)
+        uses: actions/download-artifact@v7
+        with:
+          pattern: package-client-22.03.7-*
+          path: staging/opkg-pkgs
+          merge-multiple: true
+
+      # The repository indexes that install.sh's repository flow needs:
+      # packages.adb per apk architecture, Packages/Packages.gz/Packages.sig
+      # for the merged opkg feed, plus the public signing keys. The GitHub
+      # release itself carries only the package files, for manual download.
+      #
+      # The package managers' expectations differ:
+      #   apk  — the repository entry names the index file explicitly
+      #          (<url>/apk/<arch>/packages.adb) and apk fetches it as-is;
+      #   opkg — the feed URL must NOT name the index (opkg appends
+      #          /Packages.gz), and the signature covers the UNCOMPRESSED
+      #          Packages because opkg-key zcat's the list before verifying.
+      # The package files are referenced by the indexes exactly by their
+      # file names, so the fetches resolve within the same site.
+      - name: Assemble and index the apk repositories
+        env:
+          SIGN_KEY: ${{ secrets.TT_APK_SIGN_KEY }}
+        run: |
+          # The private key exists only as a workflow secret; its public
+          # half (key-build.pub, committed in the repository) is carried to
+          # the site and installed by install.sh into /etc/apk/keys/.
+          #
+          # The repositories are per-architecture (apk is strict about the
+          # arch label; see the build-client job), and the router configures
+          # ONLY its own arch directory, so the noarch LuCI packages are
+          # copied into every one of them.
+          cp key-build.pub staging/apk/
+          printf '%s\n' "$SIGN_KEY" > key-build.sec
+          # The arch list comes from the ARCH-<arch> markers in the client
+          # artifacts — no second copy of the matrix to keep in sync.
+          for m in staging/apk-pkgs/ARCH-*; do
+            [ -e "$m" ] || { echo "no client artifacts for any architecture" >&2; exit 1; }
+            arch=${m##*/}
+            arch=${arch#ARCH-}
+            mkdir -p "staging/apk/$arch"
+            cp staging/luci-apk/*.apk "staging/apk/$arch/"
+            f=$(find staging/apk-pkgs -maxdepth 1 -name "trusttunnel-client-*.$arch.apk" | head -n1)
+            [ -n "$f" ] || { echo "missing trusttunnel-client build for $arch" >&2; exit 1; }
+            # apk fetches a package by the name reconstructed from its
+            # metadata (name-version, no arch), so inside the repository the
+            # file must be named exactly that.
+            cp "$f" "staging/apk/$arch/$(basename "$f" .$arch.apk).apk"
+            echo "  $arch: $(basename "$f")"
+          done
+          # alpine:edge is the only readily available apk-tools 3.x with
+          # mkndx/adbsign (stable Alpine ships apk-tools 2.14). Pinned by
+          # digest for reproducibility.
+          docker run --rm \
+            -v "$PWD/staging/apk:/repo" \
+            -v "$PWD/key-build.sec:/key-build.sec" \
+            alpine:edge@sha256:266f29255458134745f2bf588cb23ed1ed1768b96ff2580a05d70a8aba59e145 \
+            sh -c 'for d in /repo/*/; do
+                     (cd "$d" && apk mkndx --output packages.adb --allow-untrusted *.apk \
+                       && apk adbsign --allow-untrusted --sign-key /key-build.sec packages.adb) || exit 1
+                   done'
+          find staging/apk -name packages.adb | sort
+
+      - name: Assemble and index the opkg repository
+        env:
+          SIGN_KEY: ${{ secrets.TT_OPKG_SIGN_KEY }}
+        run: |
+          # opkg picks the package whose arch matches the device's arch list
+          # out of a merged feed and ignores the rest ("has no valid
+          # architecture, ignoring" — verified), so the opkg repository is a
+          # SINGLE directory with every architecture's ipk files; the arch in
+          # the file names keeps the builds apart.
+          mkdir -p staging/opkg
+          cp staging/luci-ipk/*.ipk staging/opkg/
+          cp staging/opkg-pkgs/*.ipk staging/opkg/
+          cp opkg-key.pub staging/opkg/
+          # The canonical index script from the OpenWrt tree. Its $MKHASH
+          # hook is OpenWrt's host tool, replaced here by a shim over
+          # sha256sum.
+          curl -fsSL -o ipkg-make-index.sh \
+            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-22.03/scripts/ipkg-make-index.sh
+          printf '#!/bin/sh\nsha256sum "$2" | cut -d" " -f1\n' > mkhash.sh
+          chmod +x mkhash.sh
+          cd staging/opkg
+          MKHASH="$PWD/../../mkhash.sh" bash ../../ipkg-make-index.sh . > Packages.manifest
+          # Same field filter as OpenWrt's package/Makefile.
+          grep -vE '^(Maintainer|LicenseFiles|Source|SourceName|Require|SourceDateEpoch)' \
+            Packages.manifest > Packages
+          rm -f Packages.manifest
+          # Same padding workaround as OpenWrt's package/Makefile: usign
+          # has a SHA-512 bug for two specific message sizes.
+          case "$(((64 + $(stat -L -c%s Packages)) % 128))" in
+            110|111) { echo ""; echo ""; } >> Packages ;;
+          esac
+          gzip -9nc Packages > Packages.gz
+          cd ../..
+          # Sign the UNCOMPRESSED Packages inside the OpenWrt rootfs image:
+          # it carries the OpenWrt-patched usign. The private key exists
+          # only as a workflow secret; its public half (opkg-key.pub,
+          # committed in the repository) is carried to the site and installed
+          # by install.sh into /etc/opkg/keys/ under its fingerprint.
+          printf '%s\n' "$SIGN_KEY" > opkg.sec
+          docker run --rm \
+            -v "$PWD/staging/opkg:/repo" \
+            -v "$PWD/opkg.sec:/opkg.sec" \
+            openwrt/rootfs:x86-64-22.03.7 \
+            sh -c 'cd /repo && usign -S -s /opkg.sec -m Packages -x Packages.sig'
+          ls -la staging/opkg/
+
       # Nothing would notice a broken index or a mismatched signing key
       # until a user's apk update — so the repository is verified HERE,
-      # exactly as install.sh configures it: the key in /etc/apk/keys,
-      # the index URL in /etc/apk/repositories.d. A signature apk does
-      # not trust is skipped with "UNTRUSTED signature", which makes the
-      # install below fail.
+      # exactly as install.sh configures it: the key in /etc/apk/keys, the
+      # index URL of the device's own arch in /etc/apk/repositories.d. A
+      # signature apk does not trust is skipped with "UNTRUSTED signature",
+      # which makes the install below fail.
       - name: Verify the apk installs on 25.12
         run: |
           docker run --rm \
@@ -264,14 +438,21 @@ jobs:
             sh -c '
               mkdir -p /etc/apk/keys /etc/apk/repositories.d
               cp /repo/key-build.pub /etc/apk/keys/trusttunnel.pub
-              # apk fetches the index at the URL verbatim; a bare
-              # directory URL would make it look for Alpine-style
-              # APKINDEX.tar.gz instead (see install.sh).
-              echo "file:///repo/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
+              # The repository entry names the device'"'"'s own arch
+              # directory — apk --print-arch, exactly as install.sh
+              # constructs the URL. apk fetches the index at the URL
+              # verbatim; a bare directory URL would make it look for
+              # Alpine-style APKINDEX.tar.gz instead (see install.sh).
+              echo "file:///repo/x86_64/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
               apk update
-              # Resolves the real dependencies (luci-base, kmod-tun,
-              # curl, ...) against the version'"'"'s official feeds.
+              # Resolves the real dependencies (luci-base, kmod-tun, curl,
+              # ...) against the version'"'"'s official feeds, plus the
+              # arch-specific trusttunnel-client from the repository.
               apk add luci-app-trusttunnel-lite
+              # The client is a hard dependency of the package; --version
+              # proves the right binary landed and runs (statically linked,
+              # no libc worries on musl).
+              trusttunnel_client --version
             '
       # The ipk is built once, on the oldest SDK (22.03), and the release
       # design relies on it installing on 23.05/24.10 because the
@@ -300,34 +481,39 @@ jobs:
                 echo "src/gz trusttunnel file:///repo" > /etc/opkg/customfeeds.conf
                 opkg update
                 # Resolves the real dependencies (luci-base, kmod-tun,
-                # curl, ...) against the version'"'"'s official feeds.
+                # curl, ...) against the version'"'"'s official feeds, plus
+                # the x86_64 trusttunnel-client from the merged feed.
                 opkg install luci-app-trusttunnel-lite
+                trusttunnel_client --version
               '
           done
-      # The release assets are the package files: the apk from 25.12 and
-      # the ipk from 22.03. Uploading from here — rather than from each
-      # matrix job — gives the release a single writer: the matrix jobs
-      # would otherwise update the same release concurrently.
+      # The release assets are the package files: the apks from 25.12 and
+      # the ipks from 22.03, every architecture included (the client apks
+      # carry the appended arch in the name). Uploading from here — rather
+      # than from each matrix job — gives the release a single writer: the
+      # matrix jobs would otherwise update the same release concurrently.
       - name: Publish the release assets
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            staging/apk/*.apk
-            staging/opkg/*.ipk
+            staging/luci-apk/*.apk
+            staging/apk-pkgs/trusttunnel-client-*.apk
+            staging/luci-ipk/*.ipk
+            staging/opkg-pkgs/*.ipk
       - name: Assemble the site
         run: |
           mkdir -p site/apk site/opkg
-          cp staging/apk/*.apk staging/apk/packages.adb staging/apk/key-build.pub site/apk/
+          cp -r staging/apk/. site/apk/
           cp staging/opkg/*.ipk staging/opkg/Packages staging/opkg/Packages.gz \
              staging/opkg/Packages.sig staging/opkg/opkg-key.pub site/opkg/
           rm -rf staging
           # Directory indexes for humans: Pages serves no directory
           # listing, so the bare apk/ and opkg/ URLs would 404 in a
           # browser. The package managers never fetch the bare URLs (apk
-          # fetches <url>/apk/packages.adb, opkg appends /Packages.gz),
-          # but a browsable page makes the repositories discoverable. The
-          # templates live in the repository (repo-site/).
+          # fetches <url>/apk/<arch>/packages.adb, opkg appends
+          # /Packages.gz), but a browsable page makes the repositories
+          # discoverable. The templates live in the repository (repo-site/).
           cp repo-site/apk-index.html site/apk/index.html
           cp repo-site/opkg-index.html site/opkg/index.html
           # The theme's layout only shows a commented-out favicon example;

@@ -3,11 +3,37 @@
 <head><meta charset="utf-8"><title>apk repository — luci-app-trusttunnel-lite</title></head>
 <body>
 <h1>apk repository — luci-app-trusttunnel-lite</h1>
-<p>OpenWrt 25.12+ (apk). Repository URL for the router:</p>
-<pre>https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/packages.adb</pre>
+<p>OpenWrt 25.12+ (apk). One signed repository per device architecture — apk
+matches the package arch against the device's own arch exactly, so the router
+must use its own subdirectory (<code>apk --print-arch</code>):</p>
+<pre>https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/&lt;arch&gt;/packages.adb</pre>
+<p>Public signing key:</p>
 <ul>
-<li><a href="packages.adb">packages.adb</a> — signed repository index</li>
 <li><a href="key-build.pub">key-build.pub</a> — public signing key</li>
+</ul>
+<p>Architectures (each directory holds the noarch LuCI packages and the
+architecture's TrustTunnel client build):</p>
+<ul>
+<li><a href="aarch64_generic/">aarch64_generic</a></li>
+<li><a href="aarch64_cortex-a53/">aarch64_cortex-a53</a></li>
+<li><a href="aarch64_cortex-a72/">aarch64_cortex-a72</a></li>
+<li><a href="aarch64_cortex-a76/">aarch64_cortex-a76</a></li>
+<li><a href="arm_cortex-a5_vfpv4/">arm_cortex-a5_vfpv4</a></li>
+<li><a href="arm_cortex-a7/">arm_cortex-a7</a></li>
+<li><a href="arm_cortex-a7_neon-vfpv4/">arm_cortex-a7_neon-vfpv4</a></li>
+<li><a href="arm_cortex-a7_vfpv4/">arm_cortex-a7_vfpv4</a></li>
+<li><a href="arm_cortex-a8_vfpv3/">arm_cortex-a8_vfpv3</a></li>
+<li><a href="arm_cortex-a9/">arm_cortex-a9</a></li>
+<li><a href="arm_cortex-a9_neon/">arm_cortex-a9_neon</a></li>
+<li><a href="arm_cortex-a9_vfpv3-d16/">arm_cortex-a9_vfpv3-d16</a></li>
+<li><a href="arm_cortex-a15_neon-vfpv4/">arm_cortex-a15_neon-vfpv4</a></li>
+<li><a href="mips_24kc/">mips_24kc</a></li>
+<li><a href="mips_mips32/">mips_mips32</a></li>
+<li><a href="mipsel_24kc/">mipsel_24kc</a></li>
+<li><a href="mipsel_24kc_24kf/">mipsel_24kc_24kf</a></li>
+<li><a href="mipsel_74kc/">mipsel_74kc</a></li>
+<li><a href="mipsel_mips32/">mipsel_mips32</a></li>
+<li><a href="x86_64/">x86_64</a></li>
 </ul>
 </body>
 </html>

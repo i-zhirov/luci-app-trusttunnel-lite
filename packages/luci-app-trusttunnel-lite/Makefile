@@ -15,7 +15,11 @@ PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 LUCI_TITLE:=LuCI support for TrustTunnel (full tunnel)
 LUCI_DESCRIPTION:=Runs the TrustTunnel client on OpenWrt and routes LAN \
 	traffic through the tunnel with a killswitch and a LuCI interface.
-LUCI_DEPENDS:=+luci-base +kmod-tun +ip-full +curl +ca-bundle +ucode-mod-math
+# trusttunnel-client is a hard dependency: the client binaries in
+# /opt/trusttunnel_client are what this package configures and runs. apk
+# and opkg pull it from the same repository automatically, which is what
+# makes the client update with `apk upgrade` / `opkg upgrade`.
+LUCI_DEPENDS:=+trusttunnel-client +luci-base +kmod-tun +ip-full +curl +ca-bundle +ucode-mod-math
 # Otherwise luci.mk would substitute the address of LuCI itself, and `apk info`
 # would send for support to the wrong place.
 LUCI_URL:=https://github.com/i-zhirov/luci-app-trusttunnel-lite

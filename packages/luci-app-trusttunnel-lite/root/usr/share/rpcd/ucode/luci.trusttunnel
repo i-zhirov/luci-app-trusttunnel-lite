@@ -368,7 +368,7 @@ return {
 			}
 			add('prereq', 'TrustTunnel client', cl ? 'ok' : 'fail',
 				cl ? clver : 'not installed',
-				cl ? '' : 'Run install.sh — the package does not ship the client binary.');
+				cl ? '' : 'The client is a dependency of the package; reinstall trusttunnel-client.');
 
 			let tun = access('/dev/net/tun');
 			add('prereq', 'tun device', tun ? 'ok' : 'fail',
@@ -607,7 +607,7 @@ return {
 			let outp = tmp_path('import-out');
 			let wiz = '/opt/trusttunnel_client/setup_wizard';
 			if (!access(wiz))
-				return { error: 'setup_wizard is not installed; run install.sh' };
+				return { error: 'setup_wizard is not installed; reinstall the trusttunnel-client package' };
 
 			// The server hands out the configuration in TWO forms, and
 			// setup_wizard accepts them with DIFFERENT, mutually exclusive
