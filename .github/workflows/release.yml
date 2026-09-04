@@ -13,10 +13,13 @@ on:
 #
 # The right is declared HERE rather than with a toggle in the repository
 # settings: this way it travels with the code (fork, move, restore from clone)
-# and is visible when reading the workflow. Only the minimum needed is granted —
-# just contents:write, not write-all.
+# and is visible when reading the workflow. Only the minimum needed is granted.
+# pages:write and id-token:write are required by the deploy-pages action that
+# publishes the package repositories to GitHub Pages.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -213,32 +216,36 @@ jobs:
       # not published — otherwise identical .ipk filenames (noarch builds on
       # different SDKs produce the same file) would overwrite each other.
       # Only the package files become release assets; the repository indexes
-      # go to the repo branch via the publish-repo job below.
+      # go to the Pages site via the publish-repo job below.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/') && matrix.publish
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*.${{ matrix.ext }}
 
-  # Assembles the repo branch that install.sh configures the routers to
-  # use: apk/ (packages + signed packages.adb + key-build.pub) and opkg/
-  # (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub). GitHub
-  # Pages is configured to publish this branch, so the repositories are
+  # Assembles the package repositories that install.sh configures the
+  # routers to use and deploys them to GitHub Pages via the Actions
+  # deployment: apk/ (packages + signed packages.adb + key-build.pub) and
+  # opkg/ (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub),
   # served from https://i-zhirov.github.io/luci-app-trusttunnel-lite/.
+  # Nothing is committed to any branch — the site is the workflow's direct
+  # output, so no binaries ever enter git history.
   #
-  # Both repositories live on the Pages site, not in the GitHub releases:
+  # The repositories live on the Pages site, not in the GitHub releases:
   # the translation package's version contains a '~' (LuCI's findrev
   # format), and GitHub release asset names cannot contain '~' (it is
   # silently replaced with '.'), while apk reconstructs package file names
-  # from the version verbatim. Git file names have no such restriction, so
-  # the branch (and Pages) serves the indexes and the packages unchanged —
-  # and the opkg repository shares the same location for consistency.
+  # from the version verbatim. Pages serves file names byte-identically, so
+  # the indexes and the packages are served unchanged — and the opkg
+  # repository shares the same location for consistency.
+  #
+  # Runs on tag pushes (the release flow) and on workflow_dispatch, which
+  # is how a manual re-deploy of the current packages is triggered.
   publish-repo:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
       - name: Download the apk artifacts
         uses: actions/download-artifact@v7
         with:
@@ -249,24 +256,19 @@ jobs:
         with:
           name: package-x86-64-22.03.7
           path: staging/opkg
-      - name: Publish the repo branch
+      - name: Assemble the site
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch --depth=1 origin repo
-          git checkout -b repo origin/repo
-          rm -rf apk opkg
-          mkdir -p apk opkg
-          cp staging/apk/*.apk staging/apk/packages.adb staging/apk/key-build.pub apk/
+          mkdir -p site/apk site/opkg
+          cp staging/apk/*.apk staging/apk/packages.adb staging/apk/key-build.pub site/apk/
           cp staging/opkg/*.ipk staging/opkg/Packages staging/opkg/Packages.gz \
-             staging/opkg/Packages.sig staging/opkg/opkg-key.pub opkg/
+             staging/opkg/Packages.sig staging/opkg/opkg-key.pub site/opkg/
           rm -rf staging
           # Directory indexes for humans: Pages serves no directory
           # listing, so the bare apk/ and opkg/ URLs would 404 in a
           # browser. The package managers never fetch the bare URLs (apk
           # fetches <url>/apk/packages.adb, opkg appends /Packages.gz),
           # but a browsable page makes the repositories discoverable.
-          cat > apk/index.html <<'EOF'
+          cat > site/apk/index.html <<'EOF'
           <!doctype html>
           <html lang="en">
           <head><meta charset="utf-8"><title>apk repository — luci-app-trusttunnel-lite</title></head>
@@ -281,7 +283,7 @@ jobs:
           </body>
           </html>
           EOF
-          cat > opkg/index.html <<'EOF'
+          cat > site/opkg/index.html <<'EOF'
           <!doctype html>
           <html lang="en">
           <head><meta charset="utf-8"><title>opkg repository — luci-app-trusttunnel-lite</title></head>
@@ -297,12 +299,11 @@ jobs:
           </body>
           </html>
           EOF
-          # The site's homepage (Pages renders README.md). Regenerated on
-          # every release so the whole branch is the workflow's output and
-          # the page shows which release is currently being served. The
-          # __TAG__ placeholder is substituted below; the quoted heredoc
-          # keeps the $(wget ...) one-liner literal.
-          cat > README.md <<'EOF'
+          # The site's homepage (Pages renders README.md), regenerated on
+          # every deployment so it shows which release is currently being
+          # served. The __TAG__ placeholder is substituted below; the
+          # quoted heredoc keeps the $(wget ...) one-liner literal.
+          cat > site/README.md <<'EOF'
           # luci-app-trusttunnel-lite — package repositories
 
           This site hosts the package repositories that
@@ -344,11 +345,12 @@ jobs:
 
           Re-running the installer refreshes the client binary and the signing keys.
           EOF
-          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" README.md
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "package repositories for $GITHUB_REF_NAME"
-            git push origin repo
-          else
-            echo "no changes in the package repositories"
-          fi
+          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" site/README.md
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy to Pages
+        uses: actions/deploy-pages@v4
