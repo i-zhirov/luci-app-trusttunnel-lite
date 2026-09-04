@@ -276,6 +276,10 @@ jobs:
           # templates live in the repository (repo-site/).
           cp repo-site/apk-index.html site/apk/index.html
           cp repo-site/opkg-index.html site/opkg/index.html
+          # Jekyll config: points the theme's "Improve this page" link at
+          # the real homepage template (main/repo-site/README.md) instead
+          # of the stale Pages source branch.
+          cp repo-site/_config.yml site/_config.yml
           # The site's homepage: the template lives in the repository
           # (repo-site/README.md) and the Jekyll build below renders it as
           # index.html — the same behavior branch-based Pages had. The
