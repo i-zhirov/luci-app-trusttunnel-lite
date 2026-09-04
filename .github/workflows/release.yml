@@ -116,17 +116,11 @@ jobs:
           ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
           ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: package-${{ matrix.arch }}
-          path: dist/*
-
       # The repository indexes that install.sh's repository flow needs.
       # Each publish job produces the index of its format (packages.adb for
       # apk, Packages/Packages.gz/Packages.sig for opkg) plus the public
       # signing key; the publish-repo job below assembles them into the
-      # repo branch, which is what the routers actually consume. The GitHub
+      # Pages site, which is what the routers actually consume. The GitHub
       # release itself carries only the package files, for manual download.
       #
       # The package manager's expectations differ:
@@ -136,7 +130,7 @@ jobs:
       #          /Packages.gz), and the signature covers the UNCOMPRESSED
       #          Packages because opkg-key zcat's the list before verifying.
       # The package files are referenced by the indexes exactly by their
-      # file names, so the fetches resolve within the same branch.
+      # file names, so the fetches resolve within the same site.
       - name: Build the apk repository index
         if: matrix.ext == 'apk'
         env:
@@ -197,6 +191,15 @@ jobs:
             openwrt/rootfs:x86-64-22.03.7 \
             sh -c 'cd /repo && usign -S -s /opkg.sec -m Packages -x Packages.sig'
           ls -la dist/
+
+      # Uploaded AFTER the index steps: the publish-repo job consumes the
+      # packages AND the signed indexes and the public keys from this
+      # artifact, so it must contain everything dist/ has at the end.
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-${{ matrix.arch }}
+          path: dist/*
 
       # The manual variant built with V=s and printed the build progress right
       # into the step log; the action does not do that, but it stores logs in
