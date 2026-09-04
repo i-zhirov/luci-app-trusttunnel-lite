@@ -120,29 +120,28 @@ jobs:
           path: dist/*
 
       # The repository indexes that install.sh's repository flow needs.
-      # Each published release carries BOTH formats: packages.adb (signed)
-      # for apk on 25.12+ and Packages/Packages.gz (signed with usign) for
-      # opkg on 22.03-24.10, plus the two public signing keys as assets so
-      # install.sh can fetch them from the same repository URL.
+      # Each publish job produces the index of its format (packages.adb for
+      # apk, Packages/Packages.gz/Packages.sig for opkg) plus the public
+      # signing key; the publish-repo job below assembles them into the
+      # repo branch, which is what the routers actually consume. The GitHub
+      # release itself carries only the package files, for manual download.
       #
       # The package manager's expectations differ:
       #   apk  — the repository entry names the index file explicitly
-      #          (<url>/packages.adb) and apk fetches it as-is;
+      #          (<url>/apk/packages.adb) and apk fetches it as-is;
       #   opkg — the feed URL must NOT name the index (opkg appends
       #          /Packages.gz), and the signature covers the UNCOMPRESSED
       #          Packages because opkg-key zcat's the list before verifying.
-      # The .apk/.ipk assets are referenced by the indexes exactly by their
-      # file names, which is what makes the package fetches resolve through
-      # the same releases/latest/download URL.
+      # The package files are referenced by the indexes exactly by their
+      # file names, so the fetches resolve within the same branch.
       - name: Build the apk repository index
         if: matrix.ext == 'apk'
         env:
           SIGN_KEY: ${{ secrets.TT_APK_SIGN_KEY }}
         run: |
           # The private key exists only as a workflow secret; its public
-          # half (key-build.pub, committed in the repository) is published
-          # to the apk-repo branch and installed by install.sh into
-          # /etc/apk/keys/.
+          # half (key-build.pub, committed in the repository) is carried to
+          # the repo branch and installed by install.sh into /etc/apk/keys/.
           #
           # alpine:edge is the only readily available apk-tools 3.x with
           # mkndx/adbsign (stable Alpine ships apk-tools 2.14). Pinned by
@@ -156,31 +155,6 @@ jobs:
             sh -c 'cd /repo && apk mkndx --output packages.adb --allow-untrusted *.apk \
               && apk adbsign --allow-untrusted --sign-key /key-build.sec packages.adb'
           ls -la dist/
-
-      # The apk repository lives on the apk-repo branch, NOT in the GitHub
-      # releases: the translation package's version contains a '~' (LuCI's
-      # findrev format), and GitHub release asset names cannot contain '~'
-      # (it is silently replaced with '.'), while apk reconstructs package
-      # file names from the version verbatim. Git file names have no such
-      # restriction, so raw.githubusercontent.com serves the index and the
-      # packages unchanged. The branch carries the packages, the signed
-      # index and the public signing key.
-      - name: Publish the apk repository branch
-        if: matrix.ext == 'apk' && startsWith(github.ref, 'refs/tags/')
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch --depth=1 origin apk-repo
-          git checkout -b apk-repo origin/apk-repo
-          rm -f luci-app-trusttunnel-lite-*.apk luci-i18n-trusttunnel-*.apk packages.adb key-build.pub
-          cp dist/*.apk dist/packages.adb key-build.pub .
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "apk repository for $GITHUB_REF_NAME"
-            git push origin apk-repo
-          else
-            echo "no changes in the apk repository"
-          fi
 
       - name: Build the opkg repository index
         if: matrix.ext == 'ipk'
@@ -210,7 +184,7 @@ jobs:
           # Sign the UNCOMPRESSED Packages inside the OpenWrt rootfs image:
           # it carries the OpenWrt-patched usign. The private key exists
           # only as a workflow secret; its public half (opkg-key.pub,
-          # committed in the repository) is uploaded as a release asset and
+          # committed in the repository) is carried to the repo branch and
           # installed by install.sh into /etc/opkg/keys/ under its
           # fingerprint.
           printf '%s\n' "$SIGN_KEY" > opkg.sec
@@ -238,8 +212,58 @@ jobs:
       # 22.03 (ipk). The other branches build and verify the package but are
       # not published — otherwise identical .ipk filenames (noarch builds on
       # different SDKs produce the same file) would overwrite each other.
+      # Only the package files become release assets; the repository indexes
+      # go to the repo branch via the publish-repo job below.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/') && matrix.publish
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: dist/*.${{ matrix.ext }}
+
+  # Assembles the repo branch that install.sh configures the routers to use:
+  # apk/ (packages + signed packages.adb + key-build.pub) and opkg/
+  # (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub), served
+  # via raw.githubusercontent.com.
+  #
+  # Both repositories live on the same branch, not in the GitHub releases:
+  # the translation package's version contains a '~' (LuCI's findrev
+  # format), and GitHub release asset names cannot contain '~' (it is
+  # silently replaced with '.'), while apk reconstructs package file names
+  # from the version verbatim. Git file names have no such restriction, so
+  # the branch serves the indexes and the packages unchanged — and the opkg
+  # repository shares the same location for consistency.
+  publish-repo:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the apk artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: package-x86-64-25.12.5
+          path: staging/apk
+      - name: Download the opkg artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: package-x86-64-22.03.7
+          path: staging/opkg
+      - name: Publish the repo branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --depth=1 origin repo
+          git checkout -b repo origin/repo
+          rm -rf apk opkg
+          mkdir -p apk opkg
+          cp staging/apk/*.apk staging/apk/packages.adb staging/apk/key-build.pub apk/
+          cp staging/opkg/*.ipk staging/opkg/Packages staging/opkg/Packages.gz \
+             staging/opkg/Packages.sig staging/opkg/opkg-key.pub opkg/
+          rm -rf staging
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "package repositories for $GITHUB_REF_NAME"
+            git push origin repo
+          else
+            echo "no changes in the package repositories"
+          fi

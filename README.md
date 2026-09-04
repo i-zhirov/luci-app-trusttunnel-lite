@@ -51,9 +51,9 @@ What the installer does:
 
 1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
    (25.12+) or `opkg` (22.03–24.10).
-2. Sets up the package repository — a signed apk repository on the
-   `apk-repo` branch (25.12+) or a signed opkg feed in the GitHub releases
-   (22.03–24.10) — and installs the corresponding public signing key.
+2. Sets up the package repository — a signed apk repository (`apk/`
+   subdirectory) and a signed opkg repository (`opkg/` subdirectory) on the
+   `repo` branch — and installs the corresponding public signing key.
 3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
 4. Installs `luci-app-trusttunnel-lite` and the translation package from
@@ -226,7 +226,7 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
 ## Notes and caveats
 
 - The update check on the Status page targets this repository's releases —
-  the same GitHub releases API that hosts the opkg repository.
+  the same GitHub releases that carry the package files for manual download.
 - The firewall zone matches `tun+`, so it also covers other VPNs' tun
   devices if you run more than one.
 - The client binary comes from the official TrustTunnel installer; the
@@ -234,12 +234,13 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
   signed with an EC key, the opkg feed with usign — both verified against
   the public keys the installer installs). If you download `.apk`/`.ipk`
   files manually, verify the SHA-256 from the release notes.
-- The apk repository lives on the `apk-repo` branch rather than in the
-  GitHub releases: the translation package's version contains a `~` (LuCI's
+- Both repositories live on the `repo` branch rather than in the GitHub
+  releases: the translation package's version contains a `~` (LuCI's
   findrev format), GitHub release asset names cannot contain `~`, and apk
   reconstructs package file names from the version verbatim. Git file names
-  have no such restriction, so `raw.githubusercontent.com` serves the index
-  and the packages unchanged.
+  have no such restriction, so `raw.githubusercontent.com` serves the
+  indexes and the packages unchanged — and the opkg repository shares the
+  same location for consistency.
 - Re-running the installer refreshes the signing keys, so a key rotation
   only requires re-running it once on each router; existing installations
   keep working (`apk update`/`opkg update` verify against the keys already

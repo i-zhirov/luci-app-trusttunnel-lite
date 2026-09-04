@@ -1,36 +1,33 @@
 #!/bin/sh
 # Installer for luci-app-trusttunnel-lite for OpenWrt 22.03+.
 #
-# Installs from the package repositories hosted in this project on GitHub:
-# a signed apk repository (packages.adb on the apk-repo branch) on 25.12+,
-# an opkg repository (Packages.gz in the GitHub releases) on 22.03-24.10.
-# The package manager is detected automatically. The repository stays
-# configured on the router after the install, so later updates are a plain
-# `apk update && apk upgrade` (or `opkg update && opkg upgrade`) — re-running
-# the installer is only needed for the client binary.
+# Installs from the package repositories hosted on the repo branch of this
+# project on GitHub: a signed apk repository (apk/ subdirectory) on 25.12+,
+# a signed opkg repository (opkg/ subdirectory) on 22.03-24.10. The package
+# manager is detected automatically. The repository stays configured on the
+# router after the install, so later updates are a plain `apk update &&
+# apk upgrade` (or `opkg update && opkg upgrade`) — re-running the installer
+# is only needed for the client binary.
 #
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
 #
 # Environment overrides:
-#   TT_REPO       — GitHub repository that hosts the releases and the
-#                   apk-repo branch (default: this repository)
-#   TT_REPO_URL   — opkg repository base URL; opkg appends /Packages.gz to
-#                   it (default: the releases/latest/download URL of
-#                   $TT_REPO — useful for a mirror or a test server)
-#   TT_APK_REPO_URL — apk repository base URL; apk fetches
-#                   <url>/packages.adb from it (default:
-#                   https://raw.githubusercontent.com/$TT_REPO/apk-repo)
+#   TT_REPO     — GitHub repository that hosts the repo branch
+#                 (default: this repository)
+#   TT_REPO_URL — repository base URL; apk fetches <url>/apk/packages.adb
+#                 from it and opkg appends /Packages.gz to <url>/opkg
+#                 (default: https://raw.githubusercontent.com/$TT_REPO/repo
+#                 — useful for a mirror or a test server)
 set -e
 
 REPO="${TT_REPO:-i-zhirov/luci-app-trusttunnel-lite}"
-REPO_URL="${TT_REPO_URL:-https://github.com/$REPO/releases/latest/download}"
-APK_REPO_URL="${TT_APK_REPO_URL:-https://raw.githubusercontent.com/$REPO/apk-repo}"
+REPO_URL="${TT_REPO_URL:-https://raw.githubusercontent.com/$REPO/repo}"
 # The public halves of the two signing keys travel next to the repositories
-# they secure (key-build.pub on the apk-repo branch, opkg-key.pub as a
-# release asset) and are fetched from the same URLs. The private halves
-# exist only as GitHub Actions secrets.
-KEY_URL="$APK_REPO_URL/key-build.pub"
-OPKG_KEY_URL="$REPO_URL/opkg-key.pub"
+# they secure (key-build.pub signs the apk index packages.adb, opkg-key.pub
+# signs the opkg index Packages.gz) and are fetched from the same URLs. The
+# private halves exist only as GitHub Actions secrets.
+KEY_URL="$REPO_URL/apk/key-build.pub"
+OPKG_KEY_URL="$REPO_URL/opkg/opkg-key.pub"
 CLIENT_DIR=/opt/trusttunnel_client
 CLIENT_INSTALLER=https://raw.githubusercontent.com/TrustTunnel/TrustTunnelClient/refs/heads/master/scripts/install.sh
 
@@ -113,14 +110,6 @@ if [ "$PM" = "apk" ]; then
 	# ends in /packages.adb is fetched as-is, while a bare directory URL
 	# makes apk look for <url>/<arch>/APKINDEX.tar.gz (Alpine's layout).
 	# OpenWrt's own feeds are written the same way.
-	#
-	# The apk repository lives on the apk-repo branch, not in the GitHub
-	# releases: the translation package's version contains a '~' (LuCI's
-	# findrev format), and GitHub release asset names cannot contain '~'
-	# (it is silently replaced with '.'), while apk reconstructs package
-	# file names from the version verbatim. Git file names have no such
-	# restriction, so raw.githubusercontent.com serves the index and the
-	# packages unchanged.
 	mkdir -p /etc/apk/keys
 	# wget (busybox wget / uclient-fetch) is used on purpose, not curl:
 	# this runs BEFORE the dependencies are installed, and wget is the one
@@ -128,8 +117,8 @@ if [ "$PM" = "apk" ]; then
 	wget -q -O /etc/apk/keys/trusttunnel.pub "$KEY_URL" \
 		|| die "cannot fetch the repository signing key from $KEY_URL"
 	mkdir -p /etc/apk/repositories.d
-	printf '%s/packages.adb\n' "$APK_REPO_URL" > /etc/apk/repositories.d/trusttunnel.list
-	say "   repository: $APK_REPO_URL/packages.adb"
+	printf '%s/apk/packages.adb\n' "$REPO_URL" > /etc/apk/repositories.d/trusttunnel.list
+	say "   repository: $REPO_URL/apk/packages.adb"
 	say "   key:        /etc/apk/keys/trusttunnel.pub"
 else
 	# opkg appends /Packages.gz to the feed URL, so the URL must NOT name
@@ -145,8 +134,8 @@ else
 		say "   feed line already present in $_feed"
 	else
 		[ -f "$_feed" ] || touch "$_feed"
-		printf 'src/gz trusttunnel %s\n' "$REPO_URL" >> "$_feed"
-		say "   feed: $REPO_URL ($_feed)"
+		printf 'src/gz trusttunnel %s/opkg\n' "$REPO_URL" >> "$_feed"
+		say "   feed: $REPO_URL/opkg ($_feed)"
 	fi
 	# The opkg public key is committed to the repository as opkg-key.pub.
 	# Its file name in /etc/opkg/keys must be the usign key fingerprint:
@@ -200,7 +189,7 @@ fi
 say "== Installing the package"
 if [ "$PM" = "apk" ]; then
 	apk add luci-app-trusttunnel-lite \
-		|| die "failed to install luci-app-trusttunnel-lite from $APK_REPO_URL"
+		|| die "failed to install luci-app-trusttunnel-lite from $REPO_URL/apk"
 	# The translation package is optional: a release without it (or with a
 	# failed install) leaves the interface English, which is degraded but
 	# not broken — the main package must not be rolled back because of it.
