@@ -249,6 +249,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
+      # The checkout provides the site template (repo-site/README.md).
+      - uses: actions/checkout@v7
       - name: Download the apk artifacts
         uses: actions/download-artifact@v7
         with:
@@ -302,63 +304,25 @@ jobs:
           </body>
           </html>
           EOF
-          # The site's homepage. With the Actions deployment the site is
-          # served statically (no Jekyll pass, unlike branch-based Pages),
-          # so the homepage must be a real index.html — a README.md at the
-          # root would only be served as a raw file. Regenerated on every
-          # deployment so it shows which release is currently being served.
-          # The __TAG__ placeholder is substituted below; the quoted
-          # heredoc keeps the $(wget ...) one-liner literal.
-          cat > site/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-          <head>
-          <meta charset="utf-8">
-          <title>luci-app-trusttunnel-lite — package repositories</title>
-          <style>
-          body { font-family: sans-serif; max-width: 60em; margin: 2em auto; padding: 0 1em; line-height: 1.5; }
-          pre { background: #f5f5f5; padding: 0.5em; overflow-x: auto; }
-          code { background: #f5f5f5; padding: 0 0.2em; }
-          </style>
-          </head>
-          <body>
-          <h1>luci-app-trusttunnel-lite — package repositories</h1>
-          <p>This site hosts the package repositories that
-          <a href="https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh">install.sh</a>
-          configures on the router:</p>
-          <ul>
-          <li><a href="apk/">apk/</a> — the apk repository for OpenWrt 25.12+ (apk): the <code>.apk</code>
-          packages, the signed index <code>packages.adb</code> and <code>key-build.pub</code>.<br>
-          Repository URL for the router:
-          <code>https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/packages.adb</code></li>
-          <li><a href="opkg/">opkg/</a> — the opkg repository for OpenWrt 22.03–24.10 (opkg): the <code>.ipk</code>
-          packages, the signed index <code>Packages</code> / <code>Packages.gz</code> /
-          <code>Packages.sig</code> and <code>opkg-key.pub</code>.<br>
-          Feed URL for the router:
-          <code>https://i-zhirov.github.io/luci-app-trusttunnel-lite/opkg</code></li>
-          </ul>
-          <p>Currently serving the packages from the <code>__TAG__</code> release.</p>
-          <p>The GitHub
-          <a href="https://github.com/i-zhirov/luci-app-trusttunnel-lite/releases">releases</a>
-          carry the same package files for manual download.</p>
-          <h2>Installing</h2>
-          <pre>sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"</pre>
-          <h2>Updating</h2>
-          <p>Package updates are the standard package-manager commands:</p>
-          <pre># apk (25.12+):
-          apk update &amp;&amp; apk upgrade
-          # opkg (22.03–24.10):
-          opkg update &amp;&amp; opkg upgrade</pre>
-          <p>Re-running the installer refreshes the client binary and the signing keys.</p>
-          </body>
-          </html>
-          EOF
-          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" site/index.html
+          # The site's homepage: the template lives in the repository
+          # (repo-site/README.md) and the Jekyll build below renders it as
+          # index.html — the same behavior branch-based Pages had. The
+          # __TAG__ placeholder is substituted here; the Jekyll build then
+          # renders the markdown with the GitHub Pages theme.
+          cp repo-site/README.md site/README.md
+          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" site/README.md
+      # The official GitHub Pages Jekyll builder: renders README.md as the
+      # homepage (index.html) and copies the package files through
+      # byte-identically.
+      - name: Build the site with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: site
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload the site artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
       - name: Deploy to Pages
         uses: actions/deploy-pages@v4
