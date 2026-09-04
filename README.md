@@ -51,17 +51,21 @@ What the installer does:
 
 1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
    (25.12+) or `opkg` (22.03–24.10).
-2. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
+2. Sets up the package repository — a signed apk repository on the
+   `apk-repo` branch (25.12+) or a signed opkg feed in the GitHub releases
+   (22.03–24.10) — and installs the corresponding public signing key.
+3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
-3. Downloads `luci-app-trusttunnel-lite-*.apk` (or `*.ipk` on opkg releases)
-   from the latest release and installs it.
-4. Installs the client binary with TrustTunnel's own installer into
+4. Installs `luci-app-trusttunnel-lite` and the translation package from
+   the repository.
+5. Installs the client binary with TrustTunnel's own installer into
    `/opt/trusttunnel_client`.
-5. Restarts `rpcd` so LuCI sees the new backend.
+6. Restarts `rpcd` so LuCI sees the new backend.
 
-On opkg releases (22.03–24.10) the installer runs `opkg update` and installs
-the `.ipk` files from the same GitHub release; nothing else differs. No opkg
-feed is required.
+The repository entry stays configured on the router, so package updates are
+a plain `apk update && apk upgrade` (25.12+) or `opkg update && opkg upgrade`
+(22.03–24.10) — no need to re-run the installer for new package versions;
+re-running it is only needed to refresh the client binary.
 
 The service is left **disabled** after installation, on purpose: configure
 first, start second. Re-running the installer updates the package and the
@@ -115,7 +119,18 @@ uci commit trusttunnel
 
 ## Updating
 
-Re-run the installer. It stops the service if it is running, replaces the
+The installer leaves the package repository configured on the router, so
+package updates are the standard package-manager commands:
+
+```sh
+# apk (25.12+):
+apk update && apk upgrade
+# opkg (22.03–24.10):
+opkg update && opkg upgrade
+```
+
+The client binary is not part of the packages — re-run the installer to
+refresh it. The installer stops the service if it is running, replaces the
 package and the client binary, and starts the service back up. Settings in
 `/etc/config/trusttunnel` are left untouched.
 
@@ -133,13 +148,15 @@ What the script does:
 2. Removes both packages in a single call — `apk del` on 25.12+,
    `opkg remove` on 22.03–24.10 (the i18n package is removed first,
    because it depends on the main one).
-3. Removes the client binary from `/opt/trusttunnel_client`, the cached
+3. Removes the repository configuration the installer left behind: the apk
+   repositories.d entry and signing key, or the opkg feed line and feed key.
+4. Removes the client binary from `/opt/trusttunnel_client`, the cached
    data and — if they survived from the original package — the lists, the
    cron job and the dnsmasq include.
-4. Offers to remove the `trusttunnel` firewall zone and forwarding rule
+5. Offers to remove the `trusttunnel` firewall zone and forwarding rule
    (default: yes) and the settings in `/etc/config/trusttunnel`
    (default: no — a reinstall then keeps your configuration).
-5. Restarts `rpcd` and clears the LuCI caches so the menu and pages
+6. Restarts `rpcd` and clears the LuCI caches so the menu and pages
    forget the removed package, then checks that no table, rule or route
    is left in the kernel.
 
@@ -165,6 +182,13 @@ apk del luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
 opkg remove luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
 
 rm -rf /opt/trusttunnel_client
+
+# The repository entry and the signing keys left by the installer:
+# apk (25.12+):
+rm -f /etc/apk/repositories.d/trusttunnel.list /etc/apk/keys/trusttunnel.pub
+# opkg (22.03-24.10) — the feed key is named by its fingerprint:
+sed -i '/^src\/gz trusttunnel /d' /etc/opkg/customfeeds.conf
+rm -f /etc/opkg/keys/trusttunnel.pub
 ```
 
 The `trusttunnel` firewall zone and the `lan → trusttunnel` forwarding rule
@@ -202,17 +226,24 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
 ## Notes and caveats
 
 - The update check on the Status page targets this repository's releases —
-  the same GitHub releases API the installer uses.
+  the same GitHub releases API that hosts the opkg repository.
 - The firewall zone matches `tun+`, so it also covers other VPNs' tun
   devices if you run more than one.
 - The client binary comes from the official TrustTunnel installer; the
-  package is installed with `apk add --allow-untrusted` like the original —
-  verify the SHA-256 from the release notes if you download `.apk` files
-  manually.
-- On opkg, the `.ipk` files are installed directly from the GitHub release
-  and are not signed (opkg only verifies feed signatures, so a local
-  install does not complain). As with the `.apk` files, verify the SHA-256
-  from the release notes if you download them manually.
+  packages are installed from the signed repositories (the apk index is
+  signed with an EC key, the opkg feed with usign — both verified against
+  the public keys the installer installs). If you download `.apk`/`.ipk`
+  files manually, verify the SHA-256 from the release notes.
+- The apk repository lives on the `apk-repo` branch rather than in the
+  GitHub releases: the translation package's version contains a `~` (LuCI's
+  findrev format), GitHub release asset names cannot contain `~`, and apk
+  reconstructs package file names from the version verbatim. Git file names
+  have no such restriction, so `raw.githubusercontent.com` serves the index
+  and the packages unchanged.
+- Re-running the installer refreshes the signing keys, so a key rotation
+  only requires re-running it once on each router; existing installations
+  keep working (`apk update`/`opkg update` verify against the keys already
+  installed).
 
 ## Acknowledgements
 

@@ -119,6 +119,49 @@ else
 	say "   no trusttunnel packages are installed"
 fi
 
+# --- Repository configuration -------------------------------------------------
+# install.sh leaves the package repository configured on the router: the
+# apk repositories.d entry and the signing key on 25.12+, the opkg feed
+# line on 22.03-24.10. Both are purely install scaffolding and are removed
+# with the packages without asking.
+say "== Removing the repository configuration"
+if [ "$PM" = "apk" ]; then
+	_removed=0
+	for _f in /etc/apk/repositories.d/trusttunnel.list /etc/apk/keys/trusttunnel.pub; do
+		if [ -e "$_f" ]; then
+			rm -f "$_f"
+			_removed=1
+		fi
+	done
+	if [ "$_removed" = "1" ]; then
+		say "   repository entry and signing key removed"
+	else
+		say "   no repository configuration found"
+	fi
+else
+	# Only OUR feed line is removed; other feeds in customfeeds.conf (or a
+	# file that existed before the install) stay untouched. An emptied file
+	# is removed, so an install-created file does not linger.
+	if [ -f /etc/opkg/customfeeds.conf ]; then
+		sed -i '/^src\/gz trusttunnel /d' /etc/opkg/customfeeds.conf
+		[ -s /etc/opkg/customfeeds.conf ] || rm -f /etc/opkg/customfeeds.conf
+		say "   the trusttunnel feed line removed from /etc/opkg/customfeeds.conf"
+	else
+		say "   no repository configuration found"
+	fi
+	# The feed signing key: install.sh keeps a copy under the stable name
+	# trusttunnel.pub, and the fingerprint-named copy next to it (usign -P
+	# only matches files named by their fingerprint). The stable name lets
+	# us find and remove the right key without knowing the fingerprint in
+	# advance. usign is part of the base system.
+	if [ -f /etc/opkg/keys/trusttunnel.pub ]; then
+		_fp=$(usign -F -p /etc/opkg/keys/trusttunnel.pub 2>/dev/null) || _fp=""
+		rm -f /etc/opkg/keys/trusttunnel.pub
+		[ -n "$_fp" ] && rm -f "/etc/opkg/keys/$_fp"
+		say "   the trusttunnel feed signing key removed"
+	fi
+fi
+
 # --- Client binary and data ---------------------------------------------------
 say "== Removing the client binaries and cached data"
 _removed=0

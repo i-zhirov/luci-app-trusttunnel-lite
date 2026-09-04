@@ -1,11 +1,36 @@
 #!/bin/sh
 # Installer for luci-app-trusttunnel-lite for OpenWrt 22.03+.
-# Both branches are supported: apk (25.12+) and opkg (22.03-24.10); the package
-# manager and the artifact format are detected automatically.
+#
+# Installs from the package repositories hosted in this project on GitHub:
+# a signed apk repository (packages.adb on the apk-repo branch) on 25.12+,
+# an opkg repository (Packages.gz in the GitHub releases) on 22.03-24.10.
+# The package manager is detected automatically. The repository stays
+# configured on the router after the install, so later updates are a plain
+# `apk update && apk upgrade` (or `opkg update && opkg upgrade`) — re-running
+# the installer is only needed for the client binary.
+#
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
+#
+# Environment overrides:
+#   TT_REPO       — GitHub repository that hosts the releases and the
+#                   apk-repo branch (default: this repository)
+#   TT_REPO_URL   — opkg repository base URL; opkg appends /Packages.gz to
+#                   it (default: the releases/latest/download URL of
+#                   $TT_REPO — useful for a mirror or a test server)
+#   TT_APK_REPO_URL — apk repository base URL; apk fetches
+#                   <url>/packages.adb from it (default:
+#                   https://raw.githubusercontent.com/$TT_REPO/apk-repo)
 set -e
 
 REPO="${TT_REPO:-i-zhirov/luci-app-trusttunnel-lite}"
+REPO_URL="${TT_REPO_URL:-https://github.com/$REPO/releases/latest/download}"
+APK_REPO_URL="${TT_APK_REPO_URL:-https://raw.githubusercontent.com/$REPO/apk-repo}"
+# The public halves of the two signing keys travel next to the repositories
+# they secure (key-build.pub on the apk-repo branch, opkg-key.pub as a
+# release asset) and are fetched from the same URLs. The private halves
+# exist only as GitHub Actions secrets.
+KEY_URL="$APK_REPO_URL/key-build.pub"
+OPKG_KEY_URL="$REPO_URL/opkg-key.pub"
 CLIENT_DIR=/opt/trusttunnel_client
 CLIENT_INSTALLER=https://raw.githubusercontent.com/TrustTunnel/TrustTunnelClient/refs/heads/master/scripts/install.sh
 
@@ -19,13 +44,11 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 . /etc/openwrt_release
 
 # One installer for both OpenWrt branches: apk (25.12+) and opkg (22.03-24.10).
-# Below, $PM selects the commands and $ext the artifact extension of the
-# release (.apk on apk branches, .ipk on opkg branches).
+# Below, $PM selects the commands and the repository layout the branch uses.
 PM=""
 command -v apk >/dev/null 2>&1 && PM=apk
 [ -n "$PM" ] || { command -v opkg >/dev/null 2>&1 && PM=opkg; }
 [ -n "$PM" ] || die "neither apk nor opkg found; unsupported OpenWrt variant"
-ext=apk; [ "$PM" = "opkg" ] && ext=ipk
 
 major=$(printf '%s' "$DISTRIB_RELEASE" | cut -d. -f1)
 case "$major" in
@@ -70,53 +93,93 @@ case "$arch" in
 	*) die "unsupported CPU '$arch'; the TrustTunnel client ships only for x86_64, aarch64, armv7, mips and mipsel — this covers most modern routers, but not ARMv5/ARMv6, mips64, riscv64 or powerpc devices" ;;
 esac
 
-say "== Installing dependencies"
+# --- Package repository ------------------------------------------------------
+# install.sh used to download the .apk/.ipk files from the latest GitHub
+# release and hand them to the package manager directly. Now the packages
+# are served as real repositories — the signed apk-repo branch for apk, the
+# signed opkg feed in the GitHub releases for opkg — and the package manager
+# talks to them as such. The entry stays configured after the install, which
+# is what makes `apk update && apk upgrade` / `opkg update && opkg upgrade`
+# work for later versions.
+say "== Setting up the package repository"
 if [ "$PM" = "apk" ]; then
-	apk update
-	apk add kmod-tun ip-full curl ca-bundle
+	# apk refuses an index with an UNTRUSTED signature, so the public half
+	# of the key that signs packages.adb must be installed before the first
+	# `apk update`. The private half lives only as a GitHub Actions secret
+	# and never reaches the router. The key is stable across releases; on
+	# rotation, re-running the installer refreshes it.
+	#
+	# The repository URL must name the index file explicitly: a URL that
+	# ends in /packages.adb is fetched as-is, while a bare directory URL
+	# makes apk look for <url>/<arch>/APKINDEX.tar.gz (Alpine's layout).
+	# OpenWrt's own feeds are written the same way.
+	#
+	# The apk repository lives on the apk-repo branch, not in the GitHub
+	# releases: the translation package's version contains a '~' (LuCI's
+	# findrev format), and GitHub release asset names cannot contain '~'
+	# (it is silently replaced with '.'), while apk reconstructs package
+	# file names from the version verbatim. Git file names have no such
+	# restriction, so raw.githubusercontent.com serves the index and the
+	# packages unchanged.
+	mkdir -p /etc/apk/keys
+	# wget (busybox wget / uclient-fetch) is used on purpose, not curl:
+	# this runs BEFORE the dependencies are installed, and wget is the one
+	# tool the one-liner that fetched this script already required.
+	wget -q -O /etc/apk/keys/trusttunnel.pub "$KEY_URL" \
+		|| die "cannot fetch the repository signing key from $KEY_URL"
+	mkdir -p /etc/apk/repositories.d
+	printf '%s/packages.adb\n' "$APK_REPO_URL" > /etc/apk/repositories.d/trusttunnel.list
+	say "   repository: $APK_REPO_URL/packages.adb"
+	say "   key:        /etc/apk/keys/trusttunnel.pub"
 else
-	opkg update
-	opkg install kmod-tun ip-full curl ca-bundle
+	# opkg appends /Packages.gz to the feed URL, so the URL must NOT name
+	# the index file (unlike the apk entry above).
+	#
+	# opkg verifies feed signatures on stock OpenWrt (/etc/opkg.conf has
+	# check_signature and the default verify program is opkg-key), so the
+	# feed is signed with usign and the public key is installed into
+	# /etc/opkg/keys/<fingerprint> — the same arrangement as the official
+	# feeds.
+	_feed=/etc/opkg/customfeeds.conf
+	if grep -q '^src/gz trusttunnel ' "$_feed" 2>/dev/null; then
+		say "   feed line already present in $_feed"
+	else
+		[ -f "$_feed" ] || touch "$_feed"
+		printf 'src/gz trusttunnel %s\n' "$REPO_URL" >> "$_feed"
+		say "   feed: $REPO_URL ($_feed)"
+	fi
+	# The opkg public key is committed to the repository as opkg-key.pub.
+	# Its file name in /etc/opkg/keys must be the usign key fingerprint:
+	# usign -P (which opkg-key runs) only matches key files whose name IS
+	# the fingerprint. usign is part of the base system — opkg-key itself
+	# calls it.
+	#
+	# A copy under the stable name trusttunnel.pub is kept alongside the
+	# fingerprint-named one: uninstall.sh uses it as a handle to find and
+	# remove the key without knowing the fingerprint in advance.
+	mkdir -p /etc/opkg/keys
+	wget -q -O /etc/opkg/keys/trusttunnel.pub "$OPKG_KEY_URL" \
+		|| die "cannot fetch the feed signing key from $OPKG_KEY_URL"
+	command -v usign >/dev/null 2>&1 \
+		|| die "usign not found; cannot install the feed signing key"
+	_fp=$(usign -F -p /etc/opkg/keys/trusttunnel.pub 2>/dev/null) \
+		|| die "cannot read the fingerprint of the feed signing key"
+	cp /etc/opkg/keys/trusttunnel.pub "/etc/opkg/keys/$_fp"
+	say "   feed key: /etc/opkg/keys/$_fp"
 fi
 
-# --- Package ------------------------------------------------------------------
-say "== Fetching the latest package release"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT INT TERM
-
-curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" > "$tmp/release.json" \
-	|| die "cannot reach the GitHub API for $REPO"
-
-# The argument is substituted into the sed expression WITHOUT escaping
-# regex metacharacters, so it is only safe for the literal strings this
-# function is called with below ('luci-app-trusttunnel-lite',
-# 'luci-i18n-trusttunnel-lite', 'apk', 'ipk') — not for arbitrary input.
-pick_asset() { # $1 — package name substring, $2 — extension (apk|ipk)
-	sed -n 's/.*"browser_download_url": *"\([^"]*'"$1"'[^"]*\.'"$2"'\)".*/\1/p' \
-		"$tmp/release.json" | head -n1
-}
-
-url=$(pick_asset 'luci-app-trusttunnel-lite' "$ext")
-[ -n "$url" ] || die "cannot find a luci-app-trusttunnel-lite .$ext in the latest release of $REPO"
-
-# luci.mk builds a SEPARATE luci-i18n-trusttunnel-lite-ru package from
-# po/ru. Without it the UI stays English even though the translation exists
-# in the repository, so it has to be picked up too. The name derives from
-# LUCI_BASENAME, i.e. from the package directory name.
-i18n_url=$(pick_asset 'luci-i18n-trusttunnel-lite' "$ext")
-
-say "   $url"
-curl -fsSL -o "$tmp/pkg.$ext" "$url" || die "failed to download $url"
-if [ -n "$i18n_url" ]; then
-	say "   $i18n_url"
-	# The failure is NOT fatal, same as the failure of installing this
-	# package below: a release without a translation is degraded, not
-	# broken, and aborting the already-downloaded main package because of
-	# it would be wrong.
-	curl -fsSL -o "$tmp/i18n.$ext" "$i18n_url" \
-		|| { rm -f "$tmp/i18n.$ext"; say "warning: could not download the translation package; the interface will be English"; }
+say "== Updating package indexes"
+if [ "$PM" = "apk" ]; then
+	apk update
 else
-	say "   note: no translation package in this release; the interface will be English"
+	opkg update
+fi
+
+say "== Installing dependencies"
+if [ "$PM" = "apk" ]; then
+	apk add kmod-tun ip-full curl ca-bundle
+else
+	opkg install kmod-tun ip-full curl ca-bundle
 fi
 
 # The service is stopped before the files are replaced: otherwise the
@@ -136,19 +199,18 @@ fi
 
 say "== Installing the package"
 if [ "$PM" = "apk" ]; then
-	apk add --allow-untrusted "$tmp/pkg.apk"
-	if [ -f "$tmp/i18n.apk" ]; then
-		apk add --allow-untrusted "$tmp/i18n.apk" \
-			|| say "warning: the translation package failed to install; the interface will be English"
-	fi
+	apk add luci-app-trusttunnel-lite \
+		|| die "failed to install luci-app-trusttunnel-lite from $APK_REPO_URL"
+	# The translation package is optional: a release without it (or with a
+	# failed install) leaves the interface English, which is degraded but
+	# not broken — the main package must not be rolled back because of it.
+	apk add luci-i18n-trusttunnel-lite-ru \
+		|| say "warning: the translation package failed to install; the interface will be English"
 else
-	# A local .ipk does not pass signature verification (opkg only checks
-	# packages from feeds), so no --force-* flags are needed.
-	opkg install "$tmp/pkg.ipk"
-	if [ -f "$tmp/i18n.ipk" ]; then
-		opkg install "$tmp/i18n.ipk" \
-			|| say "warning: the translation package failed to install; the interface will be English"
-	fi
+	opkg install luci-app-trusttunnel-lite \
+		|| die "failed to install luci-app-trusttunnel-lite from $REPO_URL"
+	opkg install luci-i18n-trusttunnel-lite-ru \
+		|| say "warning: the translation package failed to install; the interface will be English"
 fi
 
 # --- Client binary -----------------------------------------------------------
@@ -163,6 +225,14 @@ mkdir -p "$CLIENT_DIR"
 # environment (run from a script or cron) reading from /dev/tty is not
 # available at all. Answering "yes" here is truthful: we stopped the
 # service above, before replacing the binary.
+#
+# The vendor script runs with `set -u` and reads $USER to decide whether
+# it is root. In a non-login environment (cron, ssh without a session)
+# the variable is unset and the script dies with "USER: parameter not
+# set". We ARE root here — the script dies on the check that would prove
+# it, so the value is exported explicitly.
+USER="${USER:-root}"
+export USER
 curl -fsSL "$CLIENT_INSTALLER" | sh -s - -a y -o "$CLIENT_DIR"
 [ -x "$CLIENT_DIR/trusttunnel_client" ] || die "client binary was not installed"
 
@@ -183,6 +253,12 @@ fi
 say ""
 say "== Done"
 say ""
+say "The repository stays configured on this router:"
+if [ "$PM" = "apk" ]; then
+	say "   apk update && apk upgrade   # to update the package later"
+else
+	say "   opkg update && opkg upgrade # to update the package later"
+fi
 say "Open LuCI: Services -> TrustTunnel -> Settings"
 say "Fill in the endpoint (or import the config your server generated),"
 say "add \"do not bypass\" exclusions if you need any, then enable the service."
