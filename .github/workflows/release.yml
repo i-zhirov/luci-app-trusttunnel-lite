@@ -29,28 +29,29 @@ jobs:
       matrix:
         include:
           # The apk branch: the canonical .apk is published to the release.
-          - arch: x86-64-25.12.5
+          - version: 25.12.5
             ext: apk
             publish: true
           # The opkg branches: ONE canonical .ipk is published, from the
           # oldest branch (22.03) — the package's dependencies are
           # unversioned, so it installs on 23.05/24.10.
-          - arch: x86-64-22.03.7
+          - version: 22.03.7
             ext: ipk
             publish: true
-          - arch: x86-64-23.05.6
+          - version: 23.05.6
             ext: ipk
             publish: false
-          - arch: x86-64-24.10.8
+          - version: 24.10.8
             ext: ipk
             publish: false
           # No builds for other client architectures on purpose: the package
           # is noarch (LUCI_PKGARCH:=all), so the built artifact is identical
           # on every SDK — the axis that actually changes the build is the
           # OpenWrt VERSION (luci.mk, opkg vs apk, findrev versioning), and it
-          # is covered by the four x86-64 branches above. The client binary is
-          # not part of the package at all: install.sh downloads it at install
-          # time and checks it against uname -m itself.
+          # is covered by the four branches above, all built on the same
+          # canonical x86-64 SDK. The client binary is not part of the package
+          # at all: install.sh downloads it at install time and checks it
+          # against uname -m itself.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,7 +79,10 @@ jobs:
       - name: Build package via OpenWrt SDK Action
         uses: openwrt/gh-action-sdk@v7
         env:
-          ARCH: ${{ matrix.arch }}
+          # The SDK image tag is <target>-<version>; the target is always
+          # x86-64 — the one canonical SDK for the noarch build (see the
+          # matrix above), only the OpenWrt version varies.
+          ARCH: x86-64-${{ matrix.version }}
           FEEDNAME: ttowrt
           # The feed is the WHOLE repository, not the packages/ directory, and
           # the path MUST be ABSOLUTE. Two different reasons, both verified.
@@ -198,7 +202,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: package-${{ matrix.arch }}
+          name: package-${{ matrix.version }}
           path: dist/*
 
       # The manual variant built with V=s and printed the build progress right
@@ -210,7 +214,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: build-logs-${{ matrix.arch }}
+          name: build-logs-${{ matrix.version }}
           path: out/logs/
           if-no-files-found: ignore
 
@@ -254,12 +258,12 @@ jobs:
       - name: Download the apk artifacts
         uses: actions/download-artifact@v7
         with:
-          name: package-x86-64-25.12.5
+          name: package-25.12.5
           path: staging/apk
       - name: Download the opkg artifacts
         uses: actions/download-artifact@v7
         with:
-          name: package-x86-64-22.03.7
+          name: package-22.03.7
           path: staging/opkg
       - name: Assemble the site
         run: |
