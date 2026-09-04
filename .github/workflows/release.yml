@@ -286,7 +286,7 @@ jobs:
             -v "$PWD/staging/apk:/repo:ro" \
             openwrt/rootfs:x86-64-25.12.0 \
             sh -c '
-              mkdir -p /etc/apk/keys /etc/apk/repositories.d
+              mkdir -p /var/lock /etc/apk/keys /etc/apk/repositories.d
               cp /repo/key-build.pub /etc/apk/keys/trusttunnel.pub
               # apk fetches the index at the URL verbatim; a bare
               # directory URL would make it look for Alpine-style
