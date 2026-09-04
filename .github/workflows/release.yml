@@ -272,38 +272,10 @@ jobs:
           # listing, so the bare apk/ and opkg/ URLs would 404 in a
           # browser. The package managers never fetch the bare URLs (apk
           # fetches <url>/apk/packages.adb, opkg appends /Packages.gz),
-          # but a browsable page makes the repositories discoverable.
-          cat > site/apk/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-          <head><meta charset="utf-8"><title>apk repository — luci-app-trusttunnel-lite</title></head>
-          <body>
-          <h1>apk repository — luci-app-trusttunnel-lite</h1>
-          <p>OpenWrt 25.12+ (apk). Repository URL for the router:</p>
-          <pre>https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/packages.adb</pre>
-          <ul>
-          <li><a href="packages.adb">packages.adb</a> — signed repository index</li>
-          <li><a href="key-build.pub">key-build.pub</a> — public signing key</li>
-          </ul>
-          </body>
-          </html>
-          EOF
-          cat > site/opkg/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-          <head><meta charset="utf-8"><title>opkg repository — luci-app-trusttunnel-lite</title></head>
-          <body>
-          <h1>opkg repository — luci-app-trusttunnel-lite</h1>
-          <p>OpenWrt 22.03–24.10 (opkg). Feed URL for the router:</p>
-          <pre>https://i-zhirov.github.io/luci-app-trusttunnel-lite/opkg</pre>
-          <ul>
-          <li><a href="Packages.gz">Packages.gz</a> — repository index</li>
-          <li><a href="Packages.sig">Packages.sig</a> — index signature (usign)</li>
-          <li><a href="opkg-key.pub">opkg-key.pub</a> — public signing key</li>
-          </ul>
-          </body>
-          </html>
-          EOF
+          # but a browsable page makes the repositories discoverable. The
+          # templates live in the repository (repo-site/).
+          cp repo-site/apk-index.html site/apk/index.html
+          cp repo-site/opkg-index.html site/opkg/index.html
           # The site's homepage: the template lives in the repository
           # (repo-site/README.md) and the Jekyll build below renders it as
           # index.html — the same behavior branch-based Pages had. The
