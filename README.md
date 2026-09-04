@@ -52,9 +52,9 @@ What the installer does:
 1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
    (25.12+) or `opkg` (22.03–24.10).
 2. Sets up the package repository — a signed apk repository (`apk/`
-   subdirectory) and a signed opkg repository (`opkg/` subdirectory) on the
-   GitHub Pages site (published from the `repo` branch) — and installs the
-   corresponding public signing key.
+   subdirectory) and a signed opkg repository (`opkg/` subdirectory) on
+   the GitHub Pages site, deployed by the release workflow — and installs
+   the corresponding public signing key.
 3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
 4. Installs `luci-app-trusttunnel-lite` and the translation package from
@@ -235,13 +235,14 @@ Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
   signed with an EC key, the opkg feed with usign — both verified against
   the public keys the installer installs). If you download `.apk`/`.ipk`
   files manually, verify the SHA-256 from the release notes.
-- Both repositories live on this project's GitHub Pages site, published
-  from the `repo` branch: the translation package's version contains a `~`
-  (LuCI's findrev format), GitHub release asset names cannot contain `~`,
-  and apk reconstructs package file names from the version verbatim. Git
-  file names (and Pages) have no such restriction, so the site serves the
-  indexes and the packages unchanged — and the opkg repository shares the
-  same location for consistency.
+- Both repositories live on this project's GitHub Pages site, deployed
+  directly by the release workflow (no branch holds the packages): the
+  translation package's version contains a `~` (LuCI's findrev format),
+  GitHub release asset names cannot contain `~`, and apk reconstructs
+  package file names from the version verbatim. Pages serves file names
+  byte-identically, so the site serves the indexes and the packages
+  unchanged — and the opkg repository shares the same location for
+  consistency.
 - Re-running the installer refreshes the signing keys, so a key rotation
   only requires re-running it once on each router; existing installations
   keep working (`apk update`/`opkg update` verify against the keys already
