@@ -29,28 +29,24 @@ jobs:
       matrix:
         include:
           # The apk branch: the canonical .apk is published to the release.
-          - arch: x86-64-25.12.5
+          - version: 25.12.5
             ext: apk
-            publish: true
-          # The opkg branches: ONE canonical .ipk is published, from the
-          # oldest branch (22.03) — the package's dependencies are
-          # unversioned, so it installs on 23.05/24.10.
-          - arch: x86-64-22.03.7
+          # The opkg branch: ONE canonical .ipk is built, on the oldest SDK
+          # (22.03) — the package's dependencies are unversioned, so the same
+          # artifact installs on 23.05/24.10. That claim is verified by the
+          # install test in the publish-repo job, not by extra SDK builds:
+          # building on 23.05/24.10 would prove nothing about the 22.03-built
+          # file anyway.
+          - version: 22.03.7
             ext: ipk
-            publish: true
-          - arch: x86-64-23.05.6
-            ext: ipk
-            publish: false
-          - arch: x86-64-24.10.8
-            ext: ipk
-            publish: false
           # No builds for other client architectures on purpose: the package
           # is noarch (LUCI_PKGARCH:=all), so the built artifact is identical
           # on every SDK — the axis that actually changes the build is the
           # OpenWrt VERSION (luci.mk, opkg vs apk, findrev versioning), and it
-          # is covered by the four x86-64 branches above. The client binary is
-          # not part of the package at all: install.sh downloads it at install
-          # time and checks it against uname -m itself.
+          # is covered by the two branches above, both built on the same
+          # canonical x86-64 SDK. The client binary is not part of the package
+          # at all: install.sh downloads it at install time and checks it
+          # against uname -m itself.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -78,7 +74,10 @@ jobs:
       - name: Build package via OpenWrt SDK Action
         uses: openwrt/gh-action-sdk@v7
         env:
-          ARCH: ${{ matrix.arch }}
+          # The SDK image tag is <target>-<version>; the target is always
+          # x86-64 — the one canonical SDK for the noarch build (see the
+          # matrix above), only the OpenWrt version varies.
+          ARCH: x86-64-${{ matrix.version }}
           FEEDNAME: ttowrt
           # The feed is the WHOLE repository, not the packages/ directory, and
           # the path MUST be ABSOLUTE. Two different reasons, both verified.
@@ -198,7 +197,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: package-${{ matrix.arch }}
+          name: package-${{ matrix.version }}
           path: dist/*
 
       # The manual variant built with V=s and printed the build progress right
@@ -210,21 +209,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: build-logs-${{ matrix.arch }}
+          name: build-logs-${{ matrix.version }}
           path: out/logs/
           if-no-files-found: ignore
-
-      # Only the two canonical jobs write to the release: 25.12 (apk) and
-      # 22.03 (ipk). The other branches build and verify the package but are
-      # not published — otherwise identical .ipk filenames (noarch builds on
-      # different SDKs produce the same file) would overwrite each other.
-      # Only the package files become release assets; the repository indexes
-      # go to the Pages site via the publish-repo job below.
-      - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/') && matrix.publish
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/*.${{ matrix.ext }}
 
   # Assembles the package repositories that install.sh configures the
   # routers to use and deploys them to GitHub Pages via the Actions
@@ -254,13 +241,80 @@ jobs:
       - name: Download the apk artifacts
         uses: actions/download-artifact@v7
         with:
-          name: package-x86-64-25.12.5
+          name: package-25.12.5
           path: staging/apk
       - name: Download the opkg artifacts
         uses: actions/download-artifact@v7
         with:
-          name: package-x86-64-22.03.7
+          name: package-22.03.7
           path: staging/opkg
+      # The .apk is built once, on the 25.12 SDK, and the signed index
+      # (packages.adb) is what install.sh hands to apk on 25.12+ routers.
+      # Nothing would notice a broken index or a mismatched signing key
+      # until a user's apk update — so the repository is verified HERE,
+      # exactly as install.sh configures it: the key in /etc/apk/keys,
+      # the index URL in /etc/apk/repositories.d. A signature apk does
+      # not trust is skipped with "UNTRUSTED signature", which makes the
+      # install below fail.
+      - name: Verify the apk installs on 25.12
+        run: |
+          docker run --rm \
+            -v "$PWD/staging/apk:/repo:ro" \
+            openwrt/rootfs:x86-64-25.12.0 \
+            sh -c '
+              mkdir -p /etc/apk/keys /etc/apk/repositories.d
+              cp /repo/key-build.pub /etc/apk/keys/trusttunnel.pub
+              # apk fetches the index at the URL verbatim; a bare
+              # directory URL would make it look for Alpine-style
+              # APKINDEX.tar.gz instead (see install.sh).
+              echo "file:///repo/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
+              apk update
+              # Resolves the real dependencies (luci-base, kmod-tun,
+              # curl, ...) against the version'"'"'s official feeds.
+              apk add luci-app-trusttunnel-lite
+            '
+      # The ipk is built once, on the oldest SDK (22.03), and the release
+      # design relies on it installing on 23.05/24.10 because the
+      # dependencies are unversioned. That claim is verified HERE, on the
+      # actual artifact, by installing it into the rootfs of each newer
+      # version — with the same signed-feed arrangement install.sh
+      # configures on a router. Building the package again on those SDKs
+      # would prove nothing about the 22.03-built file.
+      - name: Verify the ipk installs on 23.05/24.10
+        run: |
+          for img in x86-64-23.05.6 x86-64-24.10.8; do
+            echo "== openwrt/rootfs:$img =="
+            docker run --rm \
+              -v "$PWD/staging/opkg:/repo:ro" \
+              "openwrt/rootfs:$img" \
+              sh -c '
+                mkdir -p /var/lock /etc/opkg/keys
+                # The feed key must be named by its usign fingerprint —
+                # the same arrangement install.sh sets up on a router.
+                cp /repo/opkg-key.pub /etc/opkg/keys/trusttunnel.pub
+                fp=$(usign -F -p /etc/opkg/keys/trusttunnel.pub)
+                cp /etc/opkg/keys/trusttunnel.pub "/etc/opkg/keys/$fp"
+                # file:// works: opkg fetches <url>/Packages.gz and
+                # Packages.sig and verifies the signature against the key
+                # above — a missing or wrong key makes opkg update fail.
+                echo "src/gz trusttunnel file:///repo" > /etc/opkg/customfeeds.conf
+                opkg update
+                # Resolves the real dependencies (luci-base, kmod-tun,
+                # curl, ...) against the version'"'"'s official feeds.
+                opkg install luci-app-trusttunnel-lite
+              '
+          done
+      # The release assets are the package files: the apk from 25.12 and
+      # the ipk from 22.03. Uploading from here — rather than from each
+      # matrix job — gives the release a single writer: the matrix jobs
+      # would otherwise update the same release concurrently.
+      - name: Publish the release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            staging/apk/*.apk
+            staging/opkg/*.ipk
       - name: Assemble the site
         run: |
           mkdir -p site/apk site/opkg
