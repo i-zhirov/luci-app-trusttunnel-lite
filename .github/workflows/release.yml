@@ -276,6 +276,10 @@ jobs:
           # templates live in the repository (repo-site/).
           cp repo-site/apk-index.html site/apk/index.html
           cp repo-site/opkg-index.html site/opkg/index.html
+          # The theme's layout only shows a commented-out favicon example;
+          # browsers still auto-request /favicon.ico, so a real one is
+          # shipped to keep that request from 404ing.
+          cp repo-site/favicon.ico site/favicon.ico
           # Jekyll config: points the theme's "Improve this page" link at
           # the real homepage template (main/repo-site/README.md) instead
           # of the stale Pages source branch.
