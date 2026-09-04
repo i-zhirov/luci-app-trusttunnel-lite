@@ -115,6 +115,30 @@ jobs:
           ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
           ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
+      # The tag is the single source of truth for PKG_VERSION (the Makefile
+      # derives it with `git describe`), and this assertion turns a regression
+      # of that wiring into a FAILED release build instead of a release that
+      # routers will never install — the v1.0.10/v1.0.11 defect, where both
+      # releases shipped the same 1.0.10 package and the status page claimed
+      # "update available" forever while the package managers had nothing to
+      # install. Filenames: the apk is name-version-r1 with dashes, the ipk is
+      # name_version (no release) with underscores — both as built by the
+      # 25.12/22.03 SDKs and verified against the v1.0.11 release assets.
+      # Skipped on workflow_dispatch: there is no tag to match there, and no
+      # release is created either.
+      - name: The package version matches the release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          case "${{ matrix.ext }}" in
+            apk) test -f "dist/luci-app-trusttunnel-lite-${tag}-r1.apk" ;;
+            ipk) test -f "dist/luci-app-trusttunnel-lite_${tag}_all.ipk" ;;
+          esac || {
+            echo "::error::built package version does not match tag $GITHUB_REF_NAME — PKG_VERSION is not derived from the tag"
+            exit 1
+          }
+          echo "the built package carries the release version ${tag}"
+
       # The repository indexes that install.sh's repository flow needs.
       # Each publish job produces the index of its format (packages.adb for
       # apk, Packages/Packages.gz/Packages.sig for opkg) plus the public
