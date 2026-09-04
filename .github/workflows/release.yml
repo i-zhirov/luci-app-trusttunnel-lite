@@ -13,10 +13,13 @@ on:
 #
 # The right is declared HERE rather than with a toggle in the repository
 # settings: this way it travels with the code (fork, move, restore from clone)
-# and is visible when reading the workflow. Only the minimum needed is granted —
-# just contents:write, not write-all.
+# and is visible when reading the workflow. Only the minimum needed is granted.
+# pages:write and id-token:write are required by the deploy-pages action that
+# publishes the package repositories to GitHub Pages.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -113,6 +116,85 @@ jobs:
           ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
           ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
+      # The repository indexes that install.sh's repository flow needs.
+      # Each publish job produces the index of its format (packages.adb for
+      # apk, Packages/Packages.gz/Packages.sig for opkg) plus the public
+      # signing key; the publish-repo job below assembles them into the
+      # Pages site, which is what the routers actually consume. The GitHub
+      # release itself carries only the package files, for manual download.
+      #
+      # The package manager's expectations differ:
+      #   apk  — the repository entry names the index file explicitly
+      #          (<url>/apk/packages.adb) and apk fetches it as-is;
+      #   opkg — the feed URL must NOT name the index (opkg appends
+      #          /Packages.gz), and the signature covers the UNCOMPRESSED
+      #          Packages because opkg-key zcat's the list before verifying.
+      # The package files are referenced by the indexes exactly by their
+      # file names, so the fetches resolve within the same site.
+      - name: Build the apk repository index
+        if: matrix.ext == 'apk'
+        env:
+          SIGN_KEY: ${{ secrets.TT_APK_SIGN_KEY }}
+        run: |
+          # The private key exists only as a workflow secret; its public
+          # half (key-build.pub, committed in the repository) is carried to
+          # the repo branch and installed by install.sh into /etc/apk/keys/.
+          #
+          # alpine:edge is the only readily available apk-tools 3.x with
+          # mkndx/adbsign (stable Alpine ships apk-tools 2.14). Pinned by
+          # digest for reproducibility.
+          cp key-build.pub dist/
+          printf '%s\n' "$SIGN_KEY" > key-build.sec
+          docker run --rm \
+            -v "$PWD/dist:/repo" \
+            -v "$PWD/key-build.sec:/key-build.sec" \
+            alpine:edge@sha256:266f29255458134745f2bf588cb23ed1ed1768b96ff2580a05d70a8aba59e145 \
+            sh -c 'cd /repo && apk mkndx --output packages.adb --allow-untrusted *.apk \
+              && apk adbsign --allow-untrusted --sign-key /key-build.sec packages.adb'
+          ls -la dist/
+
+      - name: Build the opkg repository index
+        if: matrix.ext == 'ipk'
+        env:
+          SIGN_KEY: ${{ secrets.TT_OPKG_SIGN_KEY }}
+        run: |
+          # The canonical index script from the OpenWrt tree. Its $MKHASH
+          # hook is OpenWrt's host tool, replaced here by a shim over
+          # sha256sum.
+          cp opkg-key.pub dist/
+          curl -fsSL -o ipkg-make-index.sh \
+            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-22.03/scripts/ipkg-make-index.sh
+          printf '#!/bin/sh\nsha256sum "$2" | cut -d" " -f1\n' > mkhash.sh
+          chmod +x mkhash.sh
+          cd dist
+          MKHASH="$PWD/../mkhash.sh" bash ../ipkg-make-index.sh . > Packages.manifest
+          # Same field filter as OpenWrt's package/Makefile.
+          grep -vE '^(Maintainer|LicenseFiles|Source|SourceName|Require|SourceDateEpoch)' \
+            Packages.manifest > Packages
+          # Same padding workaround as OpenWrt's package/Makefile: usign
+          # has a SHA-512 bug for two specific message sizes.
+          case "$(((64 + $(stat -L -c%s Packages)) % 128))" in
+            110|111) { echo ""; echo ""; } >> Packages ;;
+          esac
+          gzip -9nc Packages > Packages.gz
+          cd ..
+          # Sign the UNCOMPRESSED Packages inside the OpenWrt rootfs image:
+          # it carries the OpenWrt-patched usign. The private key exists
+          # only as a workflow secret; its public half (opkg-key.pub,
+          # committed in the repository) is carried to the repo branch and
+          # installed by install.sh into /etc/opkg/keys/ under its
+          # fingerprint.
+          printf '%s\n' "$SIGN_KEY" > opkg.sec
+          docker run --rm \
+            -v "$PWD/dist:/repo" \
+            -v "$PWD/opkg.sec:/opkg.sec" \
+            openwrt/rootfs:x86-64-22.03.7 \
+            sh -c 'cd /repo && usign -S -s /opkg.sec -m Packages -x Packages.sig'
+          ls -la dist/
+
+      # Uploaded AFTER the index steps: the publish-repo job consumes the
+      # packages AND the signed indexes and the public keys from this
+      # artifact, so it must contain everything dist/ has at the end.
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -136,8 +218,91 @@ jobs:
       # 22.03 (ipk). The other branches build and verify the package but are
       # not published — otherwise identical .ipk filenames (noarch builds on
       # different SDKs produce the same file) would overwrite each other.
+      # Only the package files become release assets; the repository indexes
+      # go to the Pages site via the publish-repo job below.
       - name: Publish the release
         if: startsWith(github.ref, 'refs/tags/') && matrix.publish
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: dist/*.${{ matrix.ext }}
+
+  # Assembles the package repositories that install.sh configures the
+  # routers to use and deploys them to GitHub Pages via the Actions
+  # deployment: apk/ (packages + signed packages.adb + key-build.pub) and
+  # opkg/ (packages + Packages/Packages.gz/Packages.sig + opkg-key.pub),
+  # served from https://i-zhirov.github.io/luci-app-trusttunnel-lite/.
+  # Nothing is committed to any branch — the site is the workflow's direct
+  # output, so no binaries ever enter git history.
+  #
+  # The repositories live on the Pages site, not in the GitHub releases:
+  # the translation package's version contains a '~' (LuCI's findrev
+  # format), and GitHub release asset names cannot contain '~' (it is
+  # silently replaced with '.'), while apk reconstructs package file names
+  # from the version verbatim. Pages serves file names byte-identically, so
+  # the indexes and the packages are served unchanged — and the opkg
+  # repository shares the same location for consistency.
+  #
+  # Runs on tag pushes (the release flow) and on workflow_dispatch, which
+  # is how a manual re-deploy of the current packages is triggered.
+  publish-repo:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      # The checkout provides the site template (repo-site/README.md).
+      - uses: actions/checkout@v7
+      - name: Download the apk artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: package-x86-64-25.12.5
+          path: staging/apk
+      - name: Download the opkg artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: package-x86-64-22.03.7
+          path: staging/opkg
+      - name: Assemble the site
+        run: |
+          mkdir -p site/apk site/opkg
+          cp staging/apk/*.apk staging/apk/packages.adb staging/apk/key-build.pub site/apk/
+          cp staging/opkg/*.ipk staging/opkg/Packages staging/opkg/Packages.gz \
+             staging/opkg/Packages.sig staging/opkg/opkg-key.pub site/opkg/
+          rm -rf staging
+          # Directory indexes for humans: Pages serves no directory
+          # listing, so the bare apk/ and opkg/ URLs would 404 in a
+          # browser. The package managers never fetch the bare URLs (apk
+          # fetches <url>/apk/packages.adb, opkg appends /Packages.gz),
+          # but a browsable page makes the repositories discoverable. The
+          # templates live in the repository (repo-site/).
+          cp repo-site/apk-index.html site/apk/index.html
+          cp repo-site/opkg-index.html site/opkg/index.html
+          # The theme's layout only shows a commented-out favicon example;
+          # browsers still auto-request /favicon.ico, so a real one is
+          # shipped to keep that request from 404ing.
+          cp repo-site/favicon.ico site/favicon.ico
+          # Jekyll config: points the theme's "Improve this page" link at
+          # the real homepage template (main/repo-site/README.md) instead
+          # of the stale Pages source branch.
+          cp repo-site/_config.yml site/_config.yml
+          # The site's homepage: the template lives in the repository
+          # (repo-site/README.md) and the Jekyll build below renders it as
+          # index.html — the same behavior branch-based Pages had. The
+          # __TAG__ placeholder is substituted here; the Jekyll build then
+          # renders the markdown with the GitHub Pages theme.
+          cp repo-site/README.md site/README.md
+          sed -i "s/__TAG__/$GITHUB_REF_NAME/g" site/README.md
+      # The official GitHub Pages Jekyll builder: renders README.md as the
+      # homepage (index.html) and copies the package files through
+      # byte-identically.
+      - name: Build the site with Jekyll
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: site
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to Pages
+        uses: actions/deploy-pages@v4
