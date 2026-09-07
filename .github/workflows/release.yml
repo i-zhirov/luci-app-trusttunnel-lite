@@ -374,6 +374,7 @@ jobs:
           # arch label; see the build-client job), and the router configures
           # ONLY its own arch directory, so the noarch LuCI packages are
           # copied into every one of them.
+          mkdir -p staging/apk
           cp key-build.pub staging/apk/
           printf '%s\n' "$SIGN_KEY" > key-build.sec
           # The arch list comes from the ARCH-<arch> markers in the client
