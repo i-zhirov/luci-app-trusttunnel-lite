@@ -15,7 +15,7 @@
 # hanging, pointing at something that no longer exists.
 . "$(dirname "$0")/lib.sh"
 
-INIT="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel"
+INIT="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel"
 
 sandbox="$TT_TEST_TMP/sandbox"
 bin="$sandbox/bin"

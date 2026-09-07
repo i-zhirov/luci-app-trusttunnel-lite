@@ -1,7 +1,7 @@
 #!/bin/sh
 . "$(dirname "$0")/lib.sh"
 
-. packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/records.sh
+. packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh
 
 TT_RECORDS=tests/fixtures/records/minimal.tsv
 

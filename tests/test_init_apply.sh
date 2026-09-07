@@ -16,8 +16,8 @@
 # not the cheapest, and there is a dedicated check for that here.
 . "$(dirname "$0")/lib.sh"
 
-INIT="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel"
-UCI_EXPORT="packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export"
+INIT="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel"
+UCI_EXPORT="packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export"
 
 sandbox="$TT_TEST_TMP/sandbox"
 mkdir -p "$sandbox"

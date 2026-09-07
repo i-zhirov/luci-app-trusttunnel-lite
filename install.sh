@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installer for luci-app-trusttunnel-lite for OpenWrt 22.03+.
+# Installer for luci-app-trusttunnel for OpenWrt 22.03+.
 #
 # Installs from the package repositories hosted on this project's GitHub
 # Pages site (published from the repo branch): a signed apk repository
@@ -11,7 +11,7 @@
 # dependency of the package (trusttunnel-client) and updates with it, so
 # re-running the installer is only needed to refresh the signing keys.
 #
-#   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
+#   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/install.sh)"
 #
 # Environment overrides:
 #   TT_REPO_URL — repository base URL; apk fetches
@@ -21,7 +21,7 @@
 #                 a test server)
 set -e
 
-REPO_URL="${TT_REPO_URL:-https://i-zhirov.github.io/luci-app-trusttunnel-lite}"
+REPO_URL="${TT_REPO_URL:-https://i-zhirov.github.io/trusttunnel-openwrt}"
 # The public halves of the two signing keys travel next to the repositories
 # they secure (key-build.pub signs the apk index packages.adb, opkg-key.pub
 # signs the opkg index Packages.gz) and are fetched from the same URLs. The
@@ -57,7 +57,7 @@ case "$major" in
 esac
 
 # The architecture is checked here, BEFORE anything is installed: the check
-# used to run after installing the luci-app-trusttunnel-lite package and
+# used to run after installing the luci-app-trusttunnel package and
 # the client, so an unsupported platform was only discovered after a LuCI
 # menu entry and a service without a working client binary had appeared in
 # the system — the failure left a dead stub of an installation behind
@@ -201,17 +201,17 @@ say "== Installing the package"
 # /opt/trusttunnel_client as part of this step — and updates them with the
 # same `apk upgrade` / `opkg upgrade` that updates the LuCI app.
 if [ "$PM" = "apk" ]; then
-	apk add luci-app-trusttunnel-lite \
-		|| die "failed to install luci-app-trusttunnel-lite from $REPO_URL/apk/$_apk_arch"
+	apk add luci-app-trusttunnel \
+		|| die "failed to install luci-app-trusttunnel from $REPO_URL/apk/$_apk_arch"
 	# The translation package is optional: a release without it (or with a
 	# failed install) leaves the interface English, which is degraded but
 	# not broken — the main package must not be rolled back because of it.
-	apk add luci-i18n-trusttunnel-lite-ru \
+	apk add luci-i18n-trusttunnel-ru \
 		|| say "warning: the translation package failed to install; the interface will be English"
 else
-	opkg install luci-app-trusttunnel-lite \
-		|| die "failed to install luci-app-trusttunnel-lite from $REPO_URL"
-	opkg install luci-i18n-trusttunnel-lite-ru \
+	opkg install luci-app-trusttunnel \
+		|| die "failed to install luci-app-trusttunnel from $REPO_URL"
+	opkg install luci-i18n-trusttunnel-ru \
 		|| say "warning: the translation package failed to install; the interface will be English"
 fi
 # A tripwire for the case where the repository lacks an arch-specific
