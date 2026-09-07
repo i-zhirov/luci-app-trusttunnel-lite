@@ -27,7 +27,11 @@ PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 
 # VENDOR_ARCH: the vendor's tarball name for this subtarget's CPU family.
-# The mapping must REJECT the subtargets the vendor does not ship:
+# The mapping matches $(ARCH_PACKAGES) — the package architecture
+# (arm_cortex-a7_neon-vfpv4, mips_24kc, aarch64_cortex-a53, ...) — NOT
+# $(ARCH), which carries only the CPU family (arm, mips, ...) and cannot
+# tell ARMv7 subtargets from ARMv5/ARMv6 or mips32 from mips64. The
+# patterns deliberately reject the subtargets the vendor does not ship:
 # ARMv5/ARMv6 (arm_arm926ej-s, arm_xscale, arm_fa526, ...), mips64
 # (mips64_octeonplus), riscv64, powerpc, i386, loongarch64. The mips*
 # patterns deliberately require the underscore: mips64_* must not match.
@@ -36,18 +40,18 @@ PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 # every branch but the first would otherwise carry leading whitespace into
 # PKG_SOURCE — verified: the download target broke for every non-x86_64
 # arch ("target file ... has both : and :: entries").
-VENDOR_ARCH := $(strip $(if $(filter x86_64,$(ARCH)),x86_64, \
-	$(if $(filter aarch64%,$(ARCH)),aarch64, \
-	$(if $(filter arm_cortex-%,$(ARCH)),armv7, \
-	$(if $(filter mips_%,$(ARCH)),mips, \
-	$(if $(filter mipsel_%,$(ARCH)),mipsel,))))))
+VENDOR_ARCH := $(strip $(if $(filter x86_64,$(ARCH_PACKAGES)),x86_64, \
+	$(if $(filter aarch64%,$(ARCH_PACKAGES)),aarch64, \
+	$(if $(filter arm_cortex-%,$(ARCH_PACKAGES)),armv7, \
+	$(if $(filter mips_%,$(ARCH_PACKAGES)),mips, \
+	$(if $(filter mipsel_%,$(ARCH_PACKAGES)),mipsel,))))))
 # The guard must not fire during the metadata dump: package-metadata.pl
-# evaluates the Makefile WITHOUT the target configuration (ARCH is empty
-# there) and reports a Makefile that errors as broken, dropping the
-# package from the index — the build would then produce nothing.
-ifneq ($(ARCH),)
+# evaluates the Makefile WITHOUT the target configuration (ARCH_PACKAGES
+# is empty there) and reports a Makefile that errors as broken, dropping
+# the package from the index — the build would then produce nothing.
+ifneq ($(ARCH_PACKAGES),)
 ifeq ($(VENDOR_ARCH),)
-$(error trusttunnel-client: no vendor build for OpenWrt arch '$(ARCH)' (vendor ships only x86_64, aarch64, armv7, mips, mipsel))
+$(error trusttunnel-client: no vendor build for OpenWrt arch '$(ARCH_PACKAGES)' (vendor ships only x86_64, aarch64, armv7, mips, mipsel))
 endif
 endif
 
