@@ -4,13 +4,15 @@ This site hosts the package repositories that
 [install.sh](https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)
 configures on the router:
 
-- [apk/](apk/) — the apk repository for OpenWrt 25.12+ (apk): the `.apk`
-  packages, the signed index `packages.adb` and `key-build.pub`.
-  Repository URL for the router:
-  `https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/packages.adb`
+- [apk/](apk/) — the apk repositories for OpenWrt 25.12+ (apk): one signed
+  directory per device architecture, each holding the noarch LuCI packages
+  and the architecture's TrustTunnel client build, plus `key-build.pub`.
+  Repository URL for the router (the arch is the device's own
+  `apk --print-arch`):
+  `https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/<arch>/packages.adb`
 - [opkg/](opkg/) — the opkg repository for OpenWrt 22.03–24.10 (opkg):
-  the `.ipk` packages, the signed index `Packages` / `Packages.gz` /
-  `Packages.sig` and `opkg-key.pub`.
+  one merged feed with every architecture's `.ipk` packages, the signed
+  index `Packages` / `Packages.gz` / `Packages.sig` and `opkg-key.pub`.
   Feed URL for the router:
   `https://i-zhirov.github.io/luci-app-trusttunnel-lite/opkg`
 
@@ -37,4 +39,6 @@ apk update && apk upgrade
 opkg update && opkg upgrade
 ```
 
-Re-running the installer refreshes the client binary and the signing keys.
+Re-running the installer refreshes the signing keys; the packages — the LuCI
+app and the client binary (the `trusttunnel-client` dependency) — are
+updated by the package-manager commands above.

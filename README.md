@@ -16,7 +16,8 @@ service, **all LAN traffic through the tunnel**, the firewall-level killswitch
 Everything on the router that the fork touches:
 
 - `luci-app-trusttunnel-lite` (+ `luci-i18n-trusttunnel-lite-ru` translation)
-- `/opt/trusttunnel_client` — the official TrustTunnel client binaries
+- `trusttunnel-client` — the official TrustTunnel client binaries, installed
+  as a dependency of the LuCI package into `/opt/trusttunnel_client`
 - `/etc/config/trusttunnel` — your settings (survives package updates)
 - a `trusttunnel` firewall zone (`tun+`) with a `lan → trusttunnel` forwarding
   rule, created on install
@@ -59,14 +60,14 @@ What the installer does:
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
 4. Installs `luci-app-trusttunnel-lite` and the translation package from
    the repository.
-5. Installs the client binary with TrustTunnel's own installer into
-   `/opt/trusttunnel_client`.
+5. The client binaries install automatically as a dependency
+   (`trusttunnel-client`) into `/opt/trusttunnel_client`.
 6. Restarts `rpcd` so LuCI sees the new backend.
 
 The repository entry stays configured on the router, so package updates are
 a plain `apk update && apk upgrade` (25.12+) or `opkg update && opkg upgrade`
-(22.03–24.10) — no need to re-run the installer for new package versions;
-re-running it is only needed to refresh the client binary.
+(22.03–24.10) — no need to re-run the installer: the client binary is a
+dependency of the package and updates with it.
 
 The service is left **disabled** after installation, on purpose: configure
 first, start second. Re-running the installer updates the package and the
@@ -130,10 +131,9 @@ apk update && apk upgrade
 opkg update && opkg upgrade
 ```
 
-The client binary is not part of the packages — re-run the installer to
-refresh it. The installer stops the service if it is running, replaces the
-package and the client binary, and starts the service back up. Settings in
-`/etc/config/trusttunnel` are left untouched.
+The client binary is a dependency of the package (`trusttunnel-client`),
+so it is updated by the same commands. Settings in `/etc/config/trusttunnel`
+are left untouched.
 
 ## Uninstalling
 
