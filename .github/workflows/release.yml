@@ -479,8 +479,9 @@ jobs:
               apk add luci-app-trusttunnel
               # The client is a hard dependency of the package; --version
               # proves the right binary landed and runs (statically linked,
-              # no libc worries on musl).
-              trusttunnel_client --version
+              # no libc worries on musl). The binary lives in
+              # /opt/trusttunnel_client, which is not on PATH.
+              /opt/trusttunnel_client/trusttunnel_client --version
             '
       # The ipk is built once, on the oldest SDK (22.03), and the release
       # design relies on it installing on 23.05/24.10 because the
@@ -512,7 +513,7 @@ jobs:
                 # curl, ...) against the version'"'"'s official feeds, plus
                 # the x86_64 trusttunnel-client from the merged feed.
                 opkg install luci-app-trusttunnel
-                trusttunnel_client --version
+                /opt/trusttunnel_client/trusttunnel_client --version
               '
           done
       # The release assets are the package files: the apks from 25.12 and
