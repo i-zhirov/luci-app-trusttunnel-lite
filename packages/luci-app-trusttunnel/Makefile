@@ -18,7 +18,7 @@ PKG_NAME:=luci-app-trusttunnel
 # tag (local builds, workflow_dispatch re-deploys, a feed without .git): keep
 # it equal to the last released version. release.yml asserts that a tag build
 # actually carries the tag's version, so a regression fails the release.
-PKG_VERSION:=$(strip $(shell v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] && printf '%s' "$$v" || printf '%s' 1.0.10))
+PKG_VERSION:=$(strip $(shell v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] && printf '%s' "$$v" || printf '%s' 1.0.13))
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0-only
 PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
