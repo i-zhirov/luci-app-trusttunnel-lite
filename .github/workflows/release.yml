@@ -385,12 +385,12 @@ jobs:
             arch=${arch#ARCH-}
             mkdir -p "staging/apk/$arch"
             cp staging/luci-apk/*.apk "staging/apk/$arch/"
-            f=$(find staging/apk-pkgs -maxdepth 1 -name "trusttunnel-client-*.$arch.apk" | head -n1)
+            f=$(find staging/apk-pkgs -maxdepth 1 -name "trusttunnel-client-*-$arch.apk" | head -n1)
             [ -n "$f" ] || { echo "missing trusttunnel-client build for $arch" >&2; exit 1; }
             # apk fetches a package by the name reconstructed from its
             # metadata (name-version, no arch), so inside the repository the
             # file must be named exactly that.
-            cp "$f" "staging/apk/$arch/$(basename "$f" .$arch.apk).apk"
+            cp "$f" "staging/apk/$arch/$(basename "$f" -$arch.apk).apk"
             echo "  $arch: $(basename "$f")"
           done
           # alpine:edge is the only readily available apk-tools 3.x with
