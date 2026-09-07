@@ -4,10 +4,20 @@ include $(TOPDIR)/rules.mk
 # Lightweight fork of luci-app-trusttunnel (NooBiToo/TrustTunnelOpenWrt):
 # full-tunnel only, no domain lists, no dnsmasq/nftset machinery.
 PKG_NAME:=luci-app-trusttunnel-lite
-# Version inherited from the original package: the first fork release should be
-# tagged v1.0.10 or higher, otherwise the update check will show "a newer
-# version than the latest release is installed".
-PKG_VERSION:=1.0.10
+# The version is taken from the release tag at build time: a build sitting on
+# tag vX.Y.Z produces X.Y.Z (plain X.Y.Z on opkg, X.Y.Z-r1 on apk — the 22.03
+# luci.mk ignores PKG_RELEASE). Both package managers then see a strictly
+# higher version on every release and upgrade cleanly, and the status-page
+# update check (which compares the tag against the installed version) reports
+# "up to date" instead of a permanent "update available".
+#
+# A static PKG_VERSION was the defect: v1.0.10 and v1.0.11 both shipped 1.0.10,
+# so `apk upgrade`/`opkg upgrade` never delivered the new files and the check
+# never cleared. The fallback below is used only when the checkout is not on a
+# tag (local builds, workflow_dispatch re-deploys, a feed without .git): keep
+# it equal to the last released version. release.yml asserts that a tag build
+# actually carries the tag's version, so a regression fails the release.
+PKG_VERSION:=$(strip $(shell v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] && printf '%s' "$$v" || printf '%s' 1.0.10))
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0-only
 PKG_MAINTAINER:=TrustTunnelOpenWrt contributors

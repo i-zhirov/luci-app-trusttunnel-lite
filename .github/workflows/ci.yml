@@ -12,7 +12,12 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
+      # Full history, not the default depth-1: the release-tag guard below
+      # compares tags, and with a shallow checkout the pushed tag would be the
+      # only one present — the check would pass without comparing anything.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
 
       # Defect that made the package install but the service not work: all
@@ -44,6 +49,27 @@ jobs:
           done
           [ "$fail" = 0 ] && echo "every script that must run is executable in the index"
           exit "$fail"
+
+      # A release tag must sit on a commit NEWER than the previous tag. The
+      # i18n package version is the tag commit's own date+hash (luci.mk
+      # findrev against the depth-1 checkout of the tag), so a tag placed on
+      # an old commit would silently DOWNGRADE the translation package on
+      # every router — the same class of defect release.yml documents for the
+      # no-.git fallback version. The comparison is by commit date, not tag
+      # name: a wrong name is caught separately by the version assertion in
+      # release.yml.
+      - name: The release tag is newer than the previous tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          prev=$(git tag --sort=-v:refname | awk -v t="$GITHUB_REF_NAME" '$0==t{getline; print}')
+          [ -n "$prev" ] || exit 0
+          new_ts=$(git log -1 --format=%ct "$GITHUB_REF_NAME")
+          old_ts=$(git log -1 --format=%ct "$prev")
+          if [ "$new_ts" -lt "$old_ts" ]; then
+            echo "::error::$GITHUB_REF_NAME is not on a commit newer than $prev — the i18n package version would go backwards"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME is on a commit newer than $prev"
 
       - name: Unit tests
         run: sh tests/run.sh
