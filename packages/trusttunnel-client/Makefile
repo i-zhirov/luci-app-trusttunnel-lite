@@ -41,8 +41,14 @@ VENDOR_ARCH := $(strip $(if $(filter x86_64,$(ARCH)),x86_64, \
 	$(if $(filter arm_cortex-%,$(ARCH)),armv7, \
 	$(if $(filter mips_%,$(ARCH)),mips, \
 	$(if $(filter mipsel_%,$(ARCH)),mipsel,))))))
+# The guard must not fire during the metadata dump: package-metadata.pl
+# evaluates the Makefile WITHOUT the target configuration (ARCH is empty
+# there) and reports a Makefile that errors as broken, dropping the
+# package from the index — the build would then produce nothing.
+ifneq ($(ARCH),)
 ifeq ($(VENDOR_ARCH),)
 $(error trusttunnel-client: no vendor build for OpenWrt arch '$(ARCH)' (vendor ships only x86_64, aarch64, armv7, mips, mipsel))
+endif
 endif
 
 PKG_SOURCE := trusttunnel_client-v$(PKG_VERSION)-linux-$(VENDOR_ARCH).tar.gz
