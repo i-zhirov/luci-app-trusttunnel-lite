@@ -31,11 +31,16 @@ PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 # ARMv5/ARMv6 (arm_arm926ej-s, arm_xscale, arm_fa526, ...), mips64
 # (mips64_octeonplus), riscv64, powerpc, i386, loongarch64. The mips*
 # patterns deliberately require the underscore: mips64_* must not match.
-VENDOR_ARCH := $(if $(filter x86_64,$(ARCH)),x86_64, \
+# The outer $(strip) is not decoration: make turns each backslash-newline
+# continuation into a space and keeps the next line's indentation, so
+# every branch but the first would otherwise carry leading whitespace into
+# PKG_SOURCE — verified: the download target broke for every non-x86_64
+# arch ("target file ... has both : and :: entries").
+VENDOR_ARCH := $(strip $(if $(filter x86_64,$(ARCH)),x86_64, \
 	$(if $(filter aarch64%,$(ARCH)),aarch64, \
 	$(if $(filter arm_cortex-%,$(ARCH)),armv7, \
 	$(if $(filter mips_%,$(ARCH)),mips, \
-	$(if $(filter mipsel_%,$(ARCH)),mipsel,)))))
+	$(if $(filter mipsel_%,$(ARCH)),mipsel,))))))
 ifeq ($(VENDOR_ARCH),)
 $(error trusttunnel-client: no vendor build for OpenWrt arch '$(ARCH)' (vendor ships only x86_64, aarch64, armv7, mips, mipsel))
 endif
