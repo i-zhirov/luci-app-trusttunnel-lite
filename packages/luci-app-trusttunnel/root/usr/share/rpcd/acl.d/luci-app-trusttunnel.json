@@ -1,5 +1,5 @@
 {
-	"luci-app-trusttunnel-lite": {
+	"luci-app-trusttunnel": {
 		"description": "Grant access to TrustTunnel configuration and diagnostics",
 		"read": {
 			"ubus": {

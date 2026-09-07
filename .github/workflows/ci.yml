@@ -32,12 +32,12 @@ jobs:
       # the build.
       - name: Executable bits
         run: |
-          need="packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
-          packages/luci-app-trusttunnel-lite/root/etc/uci-defaults/40-luci-trusttunnel
-          packages/luci-app-trusttunnel-lite/root/etc/hotplug.d/net/40-trusttunnel
-          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config
-          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing
-          packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export
+          need="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
+          packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
+          packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel
+          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
+          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing
+          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export
           install.sh
           uninstall.sh"
           fail=0
@@ -91,14 +91,14 @@ jobs:
             install.sh \
             uninstall.sh \
             tests/run.sh \
-            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/records.sh \
-            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config \
-            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing \
-            packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/uci-export \
-            packages/luci-app-trusttunnel-lite/root/etc/uci-defaults/40-luci-trusttunnel
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export \
+            packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
 
       - name: Shell syntax of the init script
-        run: sh -n packages/luci-app-trusttunnel-lite/root/etc/init.d/trusttunnel
+        run: sh -n packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
 
       # The ucode syntax check (`uc -c` in release.yml) does NOT catch a missing
       # import: calling an undeclared function is a runtime error, not a parse
@@ -109,7 +109,7 @@ jobs:
       # ucode core.
       - name: ucode module imports
         run: |
-          f=packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
+          f=packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
           # Functions that are NOT in the ucode core: each one requires an
           # import from a module. The list is intentionally short — only what
           # this backend can actually need; extend as necessary.
@@ -165,7 +165,7 @@ jobs:
           cmake --build /tmp/ucode/build -j"$(nproc)"
           uc=/tmp/ucode/build/ucode
           "$uc" -L '/tmp/ucode/build/*.so' -c \
-            packages/luci-app-trusttunnel-lite/root/usr/share/rpcd/ucode/luci.trusttunnel
+            packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
 
           # A control on the check itself: a compiler that accepts an obviously
           # broken file checks nothing, and a green step would be lying.
@@ -196,7 +196,7 @@ jobs:
           # contain no calls, so this marker is enough.
           mods="ui dom rpc uci form view poll fs network validation"
           fail=0
-          for f in packages/luci-app-trusttunnel-lite/htdocs/luci-static/resources/view/trusttunnel/*.js; do
+          for f in packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js; do
             for m in $mods; do
               grep -qE "(^|[^A-Za-z0-9_.$])${m}\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(" "$f" || continue
               grep -qE "^'require ${m}'" "$f" && continue
@@ -230,4 +230,4 @@ jobs:
               }
             }
             if (failed) process.exit(1);
-          ' packages/luci-app-trusttunnel-lite/htdocs/luci-static/resources/view/trusttunnel/*.js
+          ' packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js

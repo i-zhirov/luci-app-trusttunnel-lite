@@ -1,7 +1,7 @@
 #!/bin/sh
 . "$(dirname "$0")/lib.sh"
 
-GEN=packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/gen-config
+GEN=packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
 MIN=tests/fixtures/records/minimal.tsv
 FULL=tests/fixtures/records/full.tsv
 

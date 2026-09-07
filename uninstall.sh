@@ -1,6 +1,6 @@
 #!/bin/sh
-# Uninstall of luci-app-trusttunnel-lite for OpenWrt 22.03+.
-#   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/uninstall.sh)"
+# Uninstall of luci-app-trusttunnel for OpenWrt 22.03+.
+#   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/uninstall.sh)"
 #
 # Stops the service, removes it from auto-start, deletes the packages in
 # one package-manager call (apk on 25.12+, opkg on 22.03-24.10; the
@@ -11,7 +11,7 @@
 # the kernel.
 #
 # The fork writes nothing into cron or the dnsmasq config, but the script
-# still cleans their traces: they remain from the original
+# still cleans their traces: they remain from the original (upstream)
 # luci-app-trusttunnel if it was installed on the router before the fork.
 #
 # The firewall zone and /etc/config/trusttunnel are removed only after
@@ -89,8 +89,8 @@ _pkgs=""
 if [ "$PM" = "apk" ]; then
 	# `apk info -e` — "is the package installed" — works the same in
 	# apk-tools v2 and v3.
-	apk info -e luci-app-trusttunnel-lite >/dev/null 2>&1 && _pkgs="$_pkgs luci-app-trusttunnel-lite"
-	apk info -e luci-i18n-trusttunnel-lite-ru >/dev/null 2>&1 && _pkgs="$_pkgs luci-i18n-trusttunnel-lite-ru"
+	apk info -e luci-app-trusttunnel >/dev/null 2>&1 && _pkgs="$_pkgs luci-app-trusttunnel"
+	apk info -e luci-i18n-trusttunnel-ru >/dev/null 2>&1 && _pkgs="$_pkgs luci-i18n-trusttunnel-ru"
 	apk info -e trusttunnel-client >/dev/null 2>&1 && _pkgs="$_pkgs trusttunnel-client"
 else
 	# opkg processes the remove arguments IN ORDER and refuses to remove a
@@ -103,8 +103,8 @@ else
 	# `opkg list-installed` prints "name - version - description", so the
 	# pattern is a line start with the name and a space, not an exact match
 	# of the whole line.
-	opkg list-installed 2>/dev/null | grep -q '^luci-i18n-trusttunnel-lite-ru ' && _pkgs="luci-i18n-trusttunnel-lite-ru"
-	opkg list-installed 2>/dev/null | grep -q '^luci-app-trusttunnel-lite ' && _pkgs="$_pkgs luci-app-trusttunnel-lite"
+	opkg list-installed 2>/dev/null | grep -q '^luci-i18n-trusttunnel-ru ' && _pkgs="luci-i18n-trusttunnel-ru"
+	opkg list-installed 2>/dev/null | grep -q '^luci-app-trusttunnel ' && _pkgs="$_pkgs luci-app-trusttunnel"
 	opkg list-installed 2>/dev/null | grep -q '^trusttunnel-client ' && _pkgs="$_pkgs trusttunnel-client"
 fi
 if [ -n "$_pkgs" ]; then

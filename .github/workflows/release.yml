@@ -87,7 +87,7 @@ jobs:
           # `docker run -v <FEED_DIR>:/feed`, and docker treats a relative
           # value not as a directory but as a VOLUME NAME: an empty volume
           # arrives in the container, the feed comes out empty, and the build
-          # fails at `make package/luci-app-trusttunnel-lite/download`. Verified
+          # fails at `make package/luci-app-trusttunnel/download`. Verified
           # locally: `docker run -v packages:/feed alpine ls /feed` shows
           # emptiness.
           #
@@ -97,23 +97,23 @@ jobs:
           # repository a fallback timestamp branch kicks in: instead of
           # 26.238.08051~9f6fb1a you get 0.260826.21528. This is not cosmetics —
           # apk sees a DOWNGRADE in such a version and writes "Downgrading
-          # luci-i18n-trusttunnel-lite-ru (26.237.58633~00f8120 ->
+          # luci-i18n-trusttunnel-ru (26.237.58633~00f8120 ->
           # 0.260826.21528)". Verified on a live router via `apk add --simulate`.
           FEED_DIR: ${{ github.workspace }}
           ARTIFACTS_DIR: ${{ github.workspace }}/out
-          PACKAGES: luci-app-trusttunnel-lite
+          PACKAGES: luci-app-trusttunnel
 
       - name: Collect artifacts
         run: |
           mkdir -p dist
           # The build produces TWO packages: luci-app itself and the translation
-          # package that luci.mk generates from po/ru as luci-i18n-trusttunnel-lite-ru.
-          find out/bin/ -name "luci-app-trusttunnel-lite*.${{ matrix.ext }}" -exec cp {} dist/ \;
+          # package that luci.mk generates from po/ru as luci-i18n-trusttunnel-ru.
+          find out/bin/ -name "luci-app-trusttunnel*.${{ matrix.ext }}" -exec cp {} dist/ \;
           find out/bin/ -name "luci-i18n-trusttunnel-*.${{ matrix.ext }}" -exec cp {} dist/ \;
           ls -la dist/
           # A missing of either of the two packages is a build error, and it
           # must be noticed here, not by the user.
-          ls dist/luci-app-trusttunnel-lite*.${{ matrix.ext }} >/dev/null
+          ls dist/luci-app-trusttunnel*.${{ matrix.ext }} >/dev/null
           ls dist/luci-i18n-trusttunnel-*.${{ matrix.ext }} >/dev/null
 
       # The tag is the single source of truth for PKG_VERSION (the Makefile
@@ -132,8 +132,8 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME#v}"
           case "${{ matrix.ext }}" in
-            apk) test -f "dist/luci-app-trusttunnel-lite-${tag}-r1.apk" ;;
-            ipk) test -f "dist/luci-app-trusttunnel-lite_${tag}_all.ipk" ;;
+            apk) test -f "dist/luci-app-trusttunnel-${tag}-r1.apk" ;;
+            ipk) test -f "dist/luci-app-trusttunnel_${tag}_all.ipk" ;;
           esac || {
             echo "::error::built package version does not match tag $GITHUB_REF_NAME — PKG_VERSION is not derived from the tag"
             exit 1
@@ -301,7 +301,7 @@ jobs:
   # signing key at apk/key-build.pub) and opkg/ (one merged feed with every
   # architecture's packages, Packages/Packages.gz/Packages.sig and
   # opkg-key.pub), served from
-  # https://i-zhirov.github.io/luci-app-trusttunnel-lite/. Nothing is
+  # https://i-zhirov.github.io/trusttunnel-openwrt/. Nothing is
   # committed to any branch — the site is the workflow's direct output, so
   # no binaries ever enter git history.
   #
@@ -475,7 +475,7 @@ jobs:
               # Resolves the real dependencies (luci-base, kmod-tun, curl,
               # ...) against the version'"'"'s official feeds, plus the
               # arch-specific trusttunnel-client from the repository.
-              apk add luci-app-trusttunnel-lite
+              apk add luci-app-trusttunnel
               # The client is a hard dependency of the package; --version
               # proves the right binary landed and runs (statically linked,
               # no libc worries on musl).
@@ -510,7 +510,7 @@ jobs:
                 # Resolves the real dependencies (luci-base, kmod-tun,
                 # curl, ...) against the version'"'"'s official feeds, plus
                 # the x86_64 trusttunnel-client from the merged feed.
-                opkg install luci-app-trusttunnel-lite
+                opkg install luci-app-trusttunnel
                 trusttunnel_client --version
               '
           done

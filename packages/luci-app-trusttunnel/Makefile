@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-only
 include $(TOPDIR)/rules.mk
 
-# Lightweight fork of luci-app-trusttunnel (NooBiToo/TrustTunnelOpenWrt):
-# full-tunnel only, no domain lists, no dnsmasq/nftset machinery.
-PKG_NAME:=luci-app-trusttunnel-lite
+# Lightweight fork of the original luci-app-trusttunnel
+# (NooBiToo/TrustTunnelOpenWrt): full-tunnel only, no domain lists, no
+# dnsmasq/nftset machinery.
+PKG_NAME:=luci-app-trusttunnel
 # The version is taken from the release tag at build time: a build sitting on
 # tag vX.Y.Z produces X.Y.Z (plain X.Y.Z on opkg, X.Y.Z-r1 on apk — the 22.03
 # luci.mk ignores PKG_RELEASE). Both package managers then see a strictly
@@ -32,7 +33,7 @@ LUCI_DESCRIPTION:=Runs the TrustTunnel client on OpenWrt and routes LAN \
 LUCI_DEPENDS:=+trusttunnel-client +luci-base +kmod-tun +ip-full +curl +ca-bundle +ucode-mod-math
 # Otherwise luci.mk would substitute the address of LuCI itself, and `apk info`
 # would send for support to the wrong place.
-LUCI_URL:=https://github.com/i-zhirov/luci-app-trusttunnel-lite
+LUCI_URL:=https://github.com/i-zhirov/trusttunnel-openwrt
 LUCI_PKGARCH:=all
 
 # Without this declaration a package update will OVERWRITE
@@ -51,7 +52,7 @@ LUCI_PKGARCH:=all
 # list freezes empty. A declaration that looks present but does not work is
 # worse than its absence. The stock luci-app-amule and luci-app-alwaysonline do
 # the same.
-define Package/luci-app-trusttunnel-lite/conffiles
+define Package/luci-app-trusttunnel/conffiles
 /etc/config/trusttunnel
 endef
 

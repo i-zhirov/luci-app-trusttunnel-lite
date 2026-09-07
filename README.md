@@ -1,7 +1,7 @@
-# luci-app-trusttunnel-lite
+# trusttunnel-openwrt
 
 A lightweight fork of
-[luci-app-trusttunnel](https://github.com/NooBiToo/TrustTunnelOpenWrt)
+[the original luci-app-trusttunnel](https://github.com/NooBiToo/TrustTunnelOpenWrt)
 (GPL-2.0) for OpenWrt 25.12+ (apk).
 
 **Full-tunnel only, no domain lists.** The original package routes *selected*
@@ -15,7 +15,7 @@ service, **all LAN traffic through the tunnel**, the firewall-level killswitch
 
 Everything on the router that the fork touches:
 
-- `luci-app-trusttunnel-lite` (+ `luci-i18n-trusttunnel-lite-ru` translation)
+- `luci-app-trusttunnel` (+ `luci-i18n-trusttunnel-ru` translation)
 - `trusttunnel-client` — the official TrustTunnel client binaries, installed
   as a dependency of the LuCI package into `/opt/trusttunnel_client`
 - `/etc/config/trusttunnel` — your settings (survives package updates)
@@ -45,7 +45,7 @@ What the fork does **not** touch: dnsmasq, its config, its cache, the
 One command on the router:
 
 ```sh
-sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/install.sh)"
+sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/install.sh)"
 ```
 
 What the installer does:
@@ -58,7 +58,7 @@ What the installer does:
    the corresponding public signing key.
 3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
-4. Installs `luci-app-trusttunnel-lite` and the translation package from
+4. Installs `luci-app-trusttunnel` and the translation package from
    the repository.
 5. The client binaries install automatically as a dependency
    (`trusttunnel-client`) into `/opt/trusttunnel_client`.
@@ -140,7 +140,7 @@ are left untouched.
 One command on the router:
 
 ```sh
-sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/luci-app-trusttunnel-lite/main/uninstall.sh)"
+sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/uninstall.sh)"
 ```
 
 What the script does:
@@ -178,9 +178,9 @@ If you prefer to uninstall by hand, step by step:
 
 # The i18n package must be in the SAME call (it depends on the main one).
 # apk (25.12+):
-apk del luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
+apk del luci-i18n-trusttunnel-ru luci-app-trusttunnel
 # opkg (22.03-24.10) — the i18n package must be listed FIRST:
-opkg remove luci-i18n-trusttunnel-lite-ru luci-app-trusttunnel-lite
+opkg remove luci-i18n-trusttunnel-ru luci-app-trusttunnel
 
 rm -rf /opt/trusttunnel_client
 

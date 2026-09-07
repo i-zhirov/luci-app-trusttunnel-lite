@@ -19,7 +19,7 @@ const CLIENT = '/opt/trusttunnel_client/trusttunnel_client';
 // GitHub allows 60 unauthenticated requests per hour per address, and the
 // status page polls every 10 seconds. Without a cache a single open browser
 // would exhaust the limit in ten minutes.
-const RELEASE_URL = 'https://api.github.com/repos/i-zhirov/luci-app-trusttunnel-lite/releases/latest';
+const RELEASE_URL = 'https://api.github.com/repos/i-zhirov/trusttunnel-openwrt/releases/latest';
 const VERSION_CACHE = '/var/cache/trusttunnel/release.json';
 // Six hours is four requests per day per router — a vanishing fraction of
 // the 60 unauthenticated requests per hour GitHub allows.
@@ -497,17 +497,17 @@ return {
 				if (m) out.client = m[1];
 			}
 
-			// apk prints "luci-app-trusttunnel-lite-1.0.10-r1 noarch {...} [installed]",
+			// apk prints "luci-app-trusttunnel-1.0.10-r1 noarch {...} [installed]",
 			// opkg prints "Version: 1.0.10-r1" in the `opkg info` output. apk is
 			// tried first: on an opkg device the command is absent, the output
 			// is empty and the fallback kicks in. No binary paths need to be
 			// hardcoded.
-			let rp = sh_out('apk list -I luci-app-trusttunnel-lite');
-			let mp = match(trim(rp.out), /luci-app-trusttunnel-lite-([^ \t\n]+)/);
+			let rp = sh_out('apk list -I luci-app-trusttunnel');
+			let mp = match(trim(rp.out), /luci-app-trusttunnel-([^ \t\n]+)/);
 			if (mp) {
 				out.package = mp[1];
 			} else {
-				let ri = sh_out('opkg info luci-app-trusttunnel-lite');
+				let ri = sh_out('opkg info luci-app-trusttunnel');
 				for (let line in split(ri.out, '\n')) {
 					let mv = match(line, /^Version: ([^ \t\n]+)$/);
 					if (mv) { out.package = mv[1]; break; }

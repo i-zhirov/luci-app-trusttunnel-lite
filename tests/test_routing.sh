@@ -1,7 +1,7 @@
 #!/bin/sh
 . "$(dirname "$0")/lib.sh"
 
-R=packages/luci-app-trusttunnel-lite/root/usr/libexec/trusttunnel/routing
+R=packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing
 
 cat > "$TT_TEST_TMP/up.tsv" <<'EOF'
 network.fwmark	0x9527
