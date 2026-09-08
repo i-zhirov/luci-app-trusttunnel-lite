@@ -246,6 +246,16 @@ fi
 say "== Restarting LuCI backend"
 /etc/init.d/rpcd restart >/dev/null 2>&1 || true
 
+# uci-defaults normally run only at the next boot. The routing-profile seed
+# and the domains.direct migration belong to THIS install/update — the
+# service may start right below with an old config otherwise. The script is
+# idempotent, so the boot-time run stays harmless.
+if [ -x /etc/uci-defaults/40-luci-trusttunnel ]; then
+	say "== Seeding the default routing profile"
+	/etc/uci-defaults/40-luci-trusttunnel >/dev/null 2>&1 \
+		|| say "warning: the default routing profile was not created; run /etc/uci-defaults/40-luci-trusttunnel manually"
+fi
+
 # Restore the service to its previous state. Start only if it was RUNNING
 # before the install: `apk add` does not bring our service up, so without
 # this a user with a working tunnel updates and stays without a tunnel. An

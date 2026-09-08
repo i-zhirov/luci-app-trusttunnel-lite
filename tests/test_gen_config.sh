@@ -4,12 +4,14 @@
 GEN=packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
 MIN=tests/fixtures/records/minimal.tsv
 FULL=tests/fixtures/records/full.tsv
+BYPASS=tests/fixtures/records/bypass.tsv
 
 out_min="$(sh "$GEN" "$MIN")"
 out_full="$(sh "$GEN" "$FULL")"
+out_bypass="$(sh "$GEN" "$BYPASS")"
 
 # Values that are mandatory for the router and not user-configurable.
-assert_contains "$out_min" 'vpn_mode = "general"' "vpn_mode is always general"
+assert_contains "$out_min" 'vpn_mode = "general"' "no profile assigned — the legacy general mode"
 assert_contains "$out_min" 'killswitch_enabled = false' "client killswitch is off"
 assert_contains "$out_min" 'exclusions_tcp_early_ack_enabled = true' "early ack is on"
 # device_name and use_existing are no longer generated: the client schema has
@@ -34,6 +36,8 @@ assert_contains "$out_min" 'anti_dpi = false' "anti_dpi defaults off"
 assert_contains "$out_min" 'post_quantum_group_enabled = true' "post quantum defaults on"
 assert_contains "$out_min" 'has_ipv6 = true' "has_ipv6 defaults on"
 assert_contains "$out_min" 'dns_upstreams = []' "no dns upstreams by default"
+assert_contains "$out_min" 'custom_sni = ""' "custom sni defaults empty"
+assert_contains "$out_min" 'client_random = ""' "client random defaults empty"
 
 assert_contains "$out_full" 'addresses = ["1.2.3.4:443", "[2001:db8::1]:443"]' "multiple addresses"
 assert_contains "$out_full" 'loglevel = "debug"' "log level from config"
@@ -47,7 +51,47 @@ assert_contains "$out_full" 'dns_upstreams = ["tls://1.1.1.1", "quic://dns.adgua
 assert_contains "$out_full" 'password = "pa\"ss\\with"' "escapes quotes and backslashes"
 
 assert_contains "$out_full" 'exclusions = ["bank.example", "*.local.example"]' \
-	"direct domains become client exclusions"
+	"the assigned profile's bypass rules become exclusions in vpn mode"
+# domains.direct is the legacy fallback: with a profile assigned it must not
+# leak into the config (full.tsv keeps a differing value on purpose).
+assert_eq "0" "$(printf '%s' "$out_full" | grep -c 'legacy.example')" \
+	"the flat direct list is ignored while a profile is assigned"
+assert_contains "$out_full" 'custom_sni = "vpn.example.com"' "custom sni from config"
+assert_contains "$out_full" 'client_random = "0a0b0c/0f0f0f"' "client random from config"
+
+# --- Routing profile modes ---------------------------------------------------
+
+# Bypass mode inverts the selection: only the VPN rules go through the
+# tunnel, everything else stays direct (vpn_mode selective).
+assert_contains "$out_bypass" 'vpn_mode = "selective"' \
+	"a bypass-mode profile selects the client's selective mode"
+assert_contains "$out_bypass" 'exclusions = ["telegram.org", "1.2.3.0/24"]' \
+	"the profile's vpn rules become exclusions in bypass mode"
+assert_eq "0" "$(printf '%s' "$out_bypass" | grep -c 'bank.example')" \
+	"bypass rules are not exclusions in bypass mode"
+assert_eq "0" "$(printf '%s' "$out_bypass" | grep -c 'legacy.example')" \
+	"the flat direct list is ignored in bypass mode too"
+
+# The vpn-mode profile keeps the general mode and the bypass rules.
+assert_contains "$out_full" 'vpn_mode = "general"' \
+	"a vpn-mode profile keeps the general mode"
+
+# A stale reference — endpoint.routing_profile names a profile that does not
+# exist (deleted or renamed): fall back to the legacy behavior instead of
+# failing or emitting an empty exclusion list.
+cat > "$TT_TEST_TMP/stale.tsv" <<'EOF'
+endpoint.hostname	vpn.example.com
+endpoint.address	1.2.3.4:443
+endpoint.username	alice
+endpoint.password	s3cret
+endpoint.routing_profile	Ghost
+domains.direct	bank.example
+EOF
+out_stale="$(sh "$GEN" "$TT_TEST_TMP/stale.tsv")"
+assert_contains "$out_stale" 'vpn_mode = "general"' \
+	"a stale profile reference falls back to the general mode"
+assert_contains "$out_stale" 'exclusions = ["bank.example"]' \
+	"a stale profile reference falls back to the flat direct list"
 
 # The certificate arrives as a file via the second argument, not through
 # records: a records value cannot contain a newline, and PEM is multi-line.

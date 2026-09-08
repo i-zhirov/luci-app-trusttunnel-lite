@@ -547,3 +547,105 @@ msgstr "клиент его ещё не создал"
 msgid "the router itself has no internet access"
 msgstr "у самого роутера нет интернета"
 
+msgid "Custom SNI"
+msgstr "Свой SNI"
+
+msgid "Overrides the TLS Server Name. Needed when the server answers on an address that does not match its host name, e.g. behind a CDN or an IP-only setup."
+msgstr "Переопределяет имя сервера для TLS-сессии. Нужно, когда сервер отвечает с адреса, не совпадающего с его именем хоста, например за CDN или при настройке только по IP."
+
+msgid "Use the format example.com"
+msgstr "Используйте формат example.com"
+
+msgid "Client Random, hex prefix"
+msgstr "Client Random, шестнадцатеричный префикс"
+
+msgid "TLS Client Random prefix and mask. Anti-scan servers accept only clients with the matching prefix. Format: abcdef or abcdef/0f0f0f."
+msgstr "Префикс и маска TLS Client Random. Серверы с защитой от сканеров принимают только клиентов с нужным префиксом. Формат: abcdef или abcdef/0f0f0f."
+
+msgid "At most 64 characters"
+msgstr "Не больше 64 символов"
+
+msgid "Enter hex digits only, e.g. 0a0b0c or 0a0b0c/0f0f0f"
+msgstr "Только шестнадцатеричные цифры, например 0a0b0c или 0a0b0c/0f0f0f"
+
+msgid "The hex prefix must be a whole number of bytes"
+msgstr "Префикс должен содержать целое число байт"
+
+msgid "The mask must be hex digits, a whole number of bytes"
+msgstr "Маска должна состоять из шестнадцатеричных цифр, целое число байт"
+
+msgid "The mask must be the same length as the prefix"
+msgstr "Маска должна быть той же длины, что и префикс"
+
+msgid "Routing profile"
+msgstr "Профиль маршрутизации"
+
+msgid "The named profile that decides what goes through the tunnel. Profiles are managed on the Routing tab."
+msgstr "Именованный профиль, который решает, что идёт через туннель. Профили создаются на вкладке «Маршрутизация»."
+
+msgid "None — everything through the tunnel"
+msgstr "Нет — всё через туннель"
+
+msgid "Routing profiles"
+msgstr "Профили маршрутизации"
+
+msgid "A profile decides what goes through the tunnel. VPN mode tunnels everything except the bypass rules; bypass mode tunnels only the VPN rules. Rules accept a domain, *.domain, an IP address, IP:port, or a CIDR range."
+msgstr "Профиль решает, что идёт через туннель. Режим VPN гонит через туннель всё, кроме правил обхода; режим обхода — только правила VPN. Правила принимают домен, *.домен, IP-адрес, IP:порт или диапазон CIDR."
+
+msgid "Name"
+msgstr "Название"
+
+msgid "Unique name; the Server tab assigns a profile by it."
+msgstr "Уникальное название; по нему профиль назначается на вкладке «Сервер»."
+
+msgid "Name is required"
+msgstr "Название обязательно"
+
+msgid "Another profile already has this name"
+msgstr "У другого профиля уже есть такое название"
+
+msgid "Mode"
+msgstr "Режим"
+
+msgid "VPN — tunnel everything except the bypass rules"
+msgstr "VPN — через туннель всё, кроме правил обхода"
+
+msgid "Bypass — tunnel only the VPN rules"
+msgstr "Обход — через туннель только правила VPN"
+
+msgid "VPN rules"
+msgstr "Правила VPN"
+
+msgid "Sent through the tunnel: in bypass mode these are the only destinations that go through; in VPN mode the list has no effect."
+msgstr "Идут через туннель: в режиме обхода это единственные адреса, которые идут через туннель; в режиме VPN список не действует."
+
+msgid "Bypass rules"
+msgstr "Правила обхода"
+
+msgid "Always sent out directly: in VPN mode these are the only destinations that bypass the tunnel; in bypass mode the list has no effect."
+msgstr "Всегда идут напрямую: в режиме VPN это единственные адреса, которые идут в обход туннеля; в режиме обхода список не действует."
+
+msgid "Tunnel works, profile %s — only the VPN rules go through %s"
+msgstr "Туннель работает, профиль %s — через %s идут только правила VPN"
+
+msgid "Tunnel works, profile %s — only the VPN rules go through the tunnel"
+msgstr "Туннель работает, профиль %s — через туннель идут только правила VPN"
+
+msgid "Everything else stays direct."
+msgstr "Всё остальное идёт напрямую."
+
+msgid "Tunnel works, profile %s — everything except the bypass rules goes through %s"
+msgstr "Туннель работает, профиль %s — через %s идёт всё, кроме правил обхода"
+
+msgid "Tunnel works, profile %s — everything except the bypass rules goes through the tunnel"
+msgstr "Туннель работает, профиль %s — через туннель идёт всё, кроме правил обхода"
+
+msgid "The bypass rules are sent out directly."
+msgstr "Правила обхода отправляются напрямую."
+
+msgid "Profile %s — bypass, only the VPN rules are tunneled"
+msgstr "Профиль %s — обход, в туннель идут только правила VPN"
+
+msgid "Profile %s — VPN, everything except the bypass rules is tunneled"
+msgstr "Профиль %s — VPN, в туннель идёт всё, кроме правил обхода"
+

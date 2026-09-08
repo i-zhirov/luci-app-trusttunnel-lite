@@ -135,6 +135,39 @@ if [ -n "$zone_exists" ]; then
 	fi
 fi
 
+# --- Routing profiles --------------------------------------------------------
+#
+# The fork now mirrors the GUI client's routing profiles: named profiles with
+# a mode (vpn/bypass) and two rule lists, assigned per server via
+# endpoint.routing_profile. New installs get the Default profile from the
+# shipped /etc/config/trusttunnel. Upgrades keep their old config (it is
+# listed in conffiles), so this block creates the profile for them and moves
+# the old flat "do not bypass" list (domains.direct) into its bypass rules —
+# the resulting behavior is identical to the old one (vpn mode, the same
+# exclusions).
+config_load trusttunnel
+_has_profile=""
+# config_foreach, invisible to the linter.
+# shellcheck disable=SC2329,SC2317
+count_profile() { _has_profile=1; }
+config_foreach count_profile routing_profile
+
+if [ -z "$_has_profile" ]; then
+	_prof=$(uci add trusttunnel routing_profile)
+	uci set "trusttunnel.$_prof.name"='Default'
+	uci set "trusttunnel.$_prof.mode"='vpn'
+	# domains.direct is a list: `uci -q get` prints every value, one per
+	# line. A pipeline, not `for _d in $(...)`: the latter needs an
+	# unquoted expansion, which shellcheck flags and which also trips on
+	# empty input.
+	uci -q get trusttunnel.domains.direct 2>/dev/null | while IFS= read -r _d; do
+		[ -n "$_d" ] && uci add_list "trusttunnel.$_prof.bypass_rules"="$_d"
+	done
+	uci set trusttunnel.endpoint.routing_profile='Default'
+	uci commit trusttunnel
+	logger -t trusttunnel "created the default routing profile; the old direct list moved into its bypass rules"
+fi
+
 # The update check cache is reset on EVERY package install: it stores the
 # "latest release on GitHub", and after an update it certainly holds an
 # answer obtained before the installed version was released. Otherwise the

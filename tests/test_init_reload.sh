@@ -138,6 +138,13 @@ apply_settings
 assert_contains "$(calls)" "restart keep_routing=1" \
 	"a new exclusion restarts the client without tearing down routing"
 
+setup
+printf 'routing_profile.mode\tbypass\n' >> "$TT_NEXT"
+apply_settings
+
+assert_contains "$(calls)" "restart keep_routing=1" \
+	"a routing profile change restarts the client without tearing down routing"
+
 # --- Restart with a full teardown ---------------------------------------------
 
 # The table number and the mark are the only values that tear routing down.

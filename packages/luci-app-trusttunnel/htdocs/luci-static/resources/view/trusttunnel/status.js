@@ -46,6 +46,19 @@ function verdict(st) {
 			head: host ? _('Connecting to %s').format(host) : _('Connecting to the server'),
 			detail: _('The client is running but the tunnel is not established yet. If this persists, the client log below says why.') };
 
+	// The assigned routing profile decides what actually goes through the
+	// tunnel; without one it is the legacy everything-through-VPN mode.
+	if (st.routing_profile && st.routing_mode === 'bypass')
+		return { level: 'success',
+			head: host ? _('Tunnel works, profile %s — only the VPN rules go through %s').format(st.routing_profile, host)
+			           : _('Tunnel works, profile %s — only the VPN rules go through the tunnel').format(st.routing_profile),
+			detail: _('Everything else stays direct.') };
+	if (st.routing_profile)
+		return { level: 'success',
+			head: host ? _('Tunnel works, profile %s — everything except the bypass rules goes through %s').format(st.routing_profile, host)
+			           : _('Tunnel works, profile %s — everything except the bypass rules goes through the tunnel').format(st.routing_profile),
+			detail: _('The bypass rules are sent out directly.') };
+
 	return { level: 'success',
 		head: host ? _('All LAN traffic goes through %s').format(host)
 		           : _('All LAN traffic goes through the tunnel'),
@@ -108,7 +121,12 @@ return view.extend({
 			rows.push(row(_('State'),
 				E('span', { 'style': 'color:#2e7d32;font-weight:bold' }, _('working'))));
 
-		rows.push(row(_('Mode'), _('Everything through VPN')));
+		rows.push(row(_('Mode'),
+			st.routing_profile
+				? (st.routing_mode === 'bypass'
+					? _('Profile %s — bypass, only the VPN rules are tunneled').format(st.routing_profile)
+					: _('Profile %s — VPN, everything except the bypass rules is tunneled').format(st.routing_profile))
+				: _('Everything through VPN')));
 
 		if (st.endpoint_hostname)
 			rows.push(row(_('Server'), E('code', {}, st.endpoint_hostname)));

@@ -308,8 +308,15 @@ changed_keys() {
 change_class() {
 	case "$1" in
 		# domains.direct goes into client.toml (client exclusions), which
-		# the client reads once at startup.
+		# the client reads once at startup. It is the legacy fallback now:
+		# with a routing profile assigned, the profile's rules take its
+		# place.
 		domains.direct)
+			printf 'restart\n' ;;
+		# The assigned routing profile (name, mode and both rule lists) is
+		# exported under routing_profile.* and goes into client.toml the
+		# same way — mode and exclusions are read once at startup.
+		routing_profile.*)
 			printf 'restart\n' ;;
 		# Everything the nft table and the mark rule are built from.
 		network.lan_devices|network.blackhole_on_down|\
