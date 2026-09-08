@@ -52,10 +52,12 @@ What the installer does:
 
 1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
    (25.12+) or `opkg` (22.03–24.10).
-2. Sets up the package repository — a signed apk repository (`apk/`
-   subdirectory) and a signed opkg repository (`opkg/` subdirectory) on
-   the GitHub Pages site, deployed by the release workflow — and installs
-   the corresponding public signing key.
+2. Sets up the package repository — a signed apk repository (`apk/<family>/`
+   subdirectories, one per CPU family; the installer adds the family to
+   `/etc/apk/arch` so apk accepts the family-labeled client package) and a
+   signed opkg repository (`opkg/` subdirectory, with the family added to
+   `/etc/opkg/arch.conf`) on the GitHub Pages site, deployed by the release
+   workflow — and installs the corresponding public signing key.
 3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
    (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
 4. Installs `luci-app-trusttunnel-lite` and the translation package from

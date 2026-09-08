@@ -126,9 +126,21 @@ fi
 # --- Repository configuration -------------------------------------------------
 # install.sh leaves the package repository configured on the router: the
 # apk repositories.d entry and the signing key on 25.12+, the opkg feed
-# line on 22.03-24.10. Both are purely install scaffolding and are removed
-# with the packages without asking.
+# line on 22.03-24.10 — plus, on both branches, the CPU family in the
+# package manager's arch list (see install.sh). All of it is purely
+# install scaffolding and is removed with the packages without asking.
 say "== Removing the repository configuration"
+# The family that install.sh added to the arch list, derived the same way
+# (uname -m -> vendor family). An unknown CPU means the family line was
+# never added; nothing to remove.
+family=""
+case "$(uname -m 2>/dev/null)" in
+	x86_64|x86-64|x64|amd64) family=x86_64 ;;
+	aarch64|arm64)           family=aarch64 ;;
+	armv7l|armv8l)           family=armv7 ;;
+	mips)                    family=mips ;;
+	mipsel)                  family=mipsel ;;
+esac
 if [ "$PM" = "apk" ]; then
 	_removed=0
 	for _f in /etc/apk/repositories.d/trusttunnel.list /etc/apk/keys/trusttunnel.pub; do
@@ -141,6 +153,14 @@ if [ "$PM" = "apk" ]; then
 		say "   repository entry and signing key removed"
 	else
 		say "   no repository configuration found"
+	fi
+	# The family line in /etc/apk/arch (added by install.sh so apk accepts
+	# the family-labeled client package). Only OUR line is removed; the
+	# device's own arch line stays.
+	if [ -n "$family" ] && [ -f /etc/apk/arch ]; then
+		sed -i "/^$family$/d" /etc/apk/arch
+		[ -s /etc/apk/arch ] || rm -f /etc/apk/arch
+		say "   '$family' removed from /etc/apk/arch"
 	fi
 else
 	# Only OUR feed line is removed; other feeds in customfeeds.conf (or a
@@ -163,6 +183,13 @@ else
 		rm -f /etc/opkg/keys/trusttunnel.pub
 		[ -n "$_fp" ] && rm -f "/etc/opkg/keys/$_fp"
 		say "   the trusttunnel feed signing key removed"
+	fi
+	# The family line in /etc/opkg/arch.conf (added by install.sh so opkg
+	# accepts the family-labeled client package). Only OUR line is removed.
+	if [ -n "$family" ] && [ -f /etc/opkg/arch.conf ]; then
+		sed -i "/^arch $family 5$/d" /etc/opkg/arch.conf
+		[ -s /etc/opkg/arch.conf ] || rm -f /etc/opkg/arch.conf
+		say "   'arch $family 5' removed from /etc/opkg/arch.conf"
 	fi
 fi
 

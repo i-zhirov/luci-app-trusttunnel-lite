@@ -5,13 +5,15 @@ This site hosts the package repositories that
 configures on the router:
 
 - [apk/](apk/) — the apk repositories for OpenWrt 25.12+ (apk): one signed
-  directory per device architecture, each holding the noarch LuCI packages
-  and the architecture's TrustTunnel client build, plus `key-build.pub`.
-  Repository URL for the router (the arch is the device's own
-  `apk --print-arch`):
-  `https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/<arch>/packages.adb`
+  directory per CPU family, each holding the noarch LuCI packages and the
+  family's TrustTunnel client build (labeled with the family arch; the
+  installer adds the family to the device's `/etc/apk/arch`), plus
+  `key-build.pub`.
+  Repository URL for the router (the family is the device's CPU family,
+  e.g. `aarch64` for any aarch64 device):
+  `https://i-zhirov.github.io/luci-app-trusttunnel-lite/apk/<family>/packages.adb`
 - [opkg/](opkg/) — the opkg repository for OpenWrt 22.03–24.10 (opkg):
-  one merged feed with every architecture's `.ipk` packages, the signed
+  one merged feed with every family's `.ipk` packages, the signed
   index `Packages` / `Packages.gz` / `Packages.sig` and `opkg-key.pub`.
   Feed URL for the router:
   `https://i-zhirov.github.io/luci-app-trusttunnel-lite/opkg`

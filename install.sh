@@ -3,10 +3,10 @@
 #
 # Installs from the package repositories hosted on this project's GitHub
 # Pages site (published from the repo branch): a signed apk repository
-# (apk/<arch>/ subdirectories, one per device architecture) on 25.12+, a
-# signed opkg repository (opkg/ subdirectory) on 22.03-24.10. The package
-# manager is detected automatically. The repository stays configured on the
-# router after the install, so later updates are a plain `apk update && apk
+# (apk/<family>/ subdirectories, one per CPU family) on 25.12+, a signed
+# opkg repository (opkg/ subdirectory) on 22.03-24.10. The package manager
+# is detected automatically. The repository stays configured on the router
+# after the install, so later updates are a plain `apk update && apk
 # upgrade` (or `opkg update && opkg upgrade`) — the client binary is a
 # dependency of the package (trusttunnel-client) and updates with it, so
 # re-running the installer is only needed to refresh the signing keys.
@@ -15,7 +15,7 @@
 #
 # Environment overrides:
 #   TT_REPO_URL — repository base URL; apk fetches
-#                 <url>/apk/<arch>/packages.adb from it and opkg appends
+#                 <url>/apk/<family>/packages.adb from it and opkg appends
 #                 /Packages.gz to <url>/opkg (default: the GitHub Pages
 #                 site of this repository — useful for a fork, a mirror or
 #                 a test server)
@@ -64,29 +64,33 @@ esac
 # instead of exiting cleanly.
 say "== Checking architecture"
 # `uname -m` is checked, NOT `apk --print-arch`/`opkg print-architecture`.
-# This is fundamental: the constraint comes from the trusttunnel-client
-# package, which is built only for the vendor's five CPU families — and the
-# vendor's family is what `uname -m` reports, while the package-manager
-# arch is the fine-grained OpenWrt SUBTARGET arch (aarch64_cortex-a53,
-# arm_cortex-a7_neon-vfpv4, ...). The divergence is not theoretical: the
-# OpenWrt `arm_*` targets include ARMv5 and ARMv6 devices
-# (arm_arm926ej-s, arm_xscale, arm_arm1176jzf-s_vfp), where `uname -m`
-# reports armv5tel or armv6l, while the vendor accepts only armv7l and
-# armv8l. An `arm_*` check would let such routers THROUGH — the package
-# manager would then fail later, after the repository was configured, with
-# a bare "cannot satisfy the dependency" error.
+# This is fundamental: the client package is labeled with the vendor's CPU
+# FAMILY (x86_64, aarch64, armv7, mips, mipsel — see
+# packages/trusttunnel-client/Makefile), and the family is what `uname -m`
+# reports, while the package-manager arch is the fine-grained OpenWrt
+# SUBTARGET arch (aarch64_cortex-a53, arm_cortex-a7_neon-vfpv4, ...). The
+# divergence is not theoretical: the OpenWrt `arm_*` targets include ARMv5
+# and ARMv6 devices (arm_arm926ej-s, arm_xscale, arm_arm1176jzf-s_vfp),
+# where `uname -m` reports armv5tel or armv6l, while the vendor accepts
+# only armv7l and armv8l. An `arm_*` check would let such routers THROUGH —
+# the package manager would then fail later, after the repository was
+# configured, with a bare "cannot satisfy the dependency" error.
 #
 # The list is cross-checked against the vendor's scripts/install.sh and the
 # VENDOR_ARCH mapping in packages/trusttunnel-client/Makefile: x86_64,
 # armv7, aarch64, mips, mipsel are accepted. The mips byte order is
 # resolved by the build itself (mips_* vs mipsel_* subtargets pick the
-# matching vendor tarball), so passing both variants here is enough.
+# matching vendor tarball), so passing both variants here is enough. The
+# family also selects the apk repository directory and the arch-list entry
+# below.
 arch=$(uname -m 2>/dev/null)
+family=""
 case "$arch" in
-	x86_64|x86-64|x64|amd64) say "   CPU: x86_64" ;;
-	aarch64|arm64)           say "   CPU: aarch64" ;;
-	armv7l|armv8l)           say "   CPU: armv7" ;;
-	mips|mipsel)             say "   CPU: $arch (the package is built per endianness)" ;;
+	x86_64|x86-64|x64|amd64) family=x86_64; say "   CPU: x86_64" ;;
+	aarch64|arm64)           family=aarch64; say "   CPU: aarch64" ;;
+	armv7l|armv8l)           family=armv7; say "   CPU: armv7" ;;
+	mips)                    family=mips; say "   CPU: mips (big-endian)" ;;
+	mipsel)                  family=mipsel; say "   CPU: mipsel (little-endian)" ;;
 	*) die "unsupported CPU '$arch'; the TrustTunnel client ships only for x86_64, aarch64, armv7, mips and mipsel — this covers most modern routers, but not ARMv5/ARMv6, mips64, riscv64 or powerpc devices" ;;
 esac
 
@@ -106,29 +110,42 @@ if [ "$PM" = "apk" ]; then
 	# and never reaches the router. The key is stable across releases; on
 	# rotation, re-running the installer refreshes it.
 	#
-	# The repositories are PER-ARCHITECTURE: apk matches the package arch
-	# against the device's own arch byte-for-byte (verified: a package of a
-	# sibling arch is refused with "error: uninstallable"), so every
-	# subtarget arch has its own directory, mirroring the official OpenWrt
-	# layout. The URL must name the index file explicitly: a URL that ends
-	# in /packages.adb is fetched as-is, while a bare directory URL makes
-	# apk look for <url>/<arch>/APKINDEX.tar.gz (Alpine's layout).
+	# The repositories are PER-FAMILY: the client package is labeled with
+	# the CPU family name (see packages/trusttunnel-client/Makefile), and
+	# the family is added to the device's arch list below, so one directory
+	# serves every subtarget of the family. The URL must name the index
+	# file explicitly: a URL that ends in /packages.adb is fetched as-is,
+	# while a bare directory URL makes apk look for
+	# <url>/<arch>/APKINDEX.tar.gz (Alpine's layout).
 	mkdir -p /etc/apk/keys
 	# wget (busybox wget / uclient-fetch) is used on purpose, not curl:
 	# this runs BEFORE the dependencies are installed, and wget is the one
 	# tool the one-liner that fetched this script already required.
 	wget -q -O /etc/apk/keys/trusttunnel.pub "$KEY_URL" \
 		|| die "cannot fetch the repository signing key from $KEY_URL"
-	# The device's own apk arch: apk --print-arch. The CPU check above has
-	# already ensured the family is supported, and every subtarget arch of
-	# the supported families is built, so the directory exists.
+	# apk accepts every arch listed in /etc/apk/arch — the documented
+	# "additional architectures specify compatible packages which are
+	# considered for installation" mechanism (apk(8)). The client package
+	# is labeled with the CPU FAMILY, so the family is appended to the arch
+	# list, idempotently and without touching the device's own arch line.
+	# If the file does not exist yet (apk has never run), it is created
+	# with BOTH the device arch and the family: apk writes the file itself
+	# only when it is absent, and a file holding just the family would make
+	# the device's own official feeds uninstallable.
 	_apk_arch=$(apk --print-arch 2>/dev/null) \
 		|| die "cannot determine the apk architecture"
+	if [ -f /etc/apk/arch ]; then
+		grep -qx "$family" /etc/apk/arch 2>/dev/null \
+			|| printf '%s\n' "$family" >> /etc/apk/arch
+	else
+		printf '%s\n%s\n' "$_apk_arch" "$family" > /etc/apk/arch
+	fi
 	mkdir -p /etc/apk/repositories.d
-	printf '%s/apk/%s/packages.adb\n' "$REPO_URL" "$_apk_arch" \
+	printf '%s/apk/%s/packages.adb\n' "$REPO_URL" "$family" \
 		> /etc/apk/repositories.d/trusttunnel.list
-	say "   repository: $REPO_URL/apk/$_apk_arch/packages.adb"
+	say "   repository: $REPO_URL/apk/$family/packages.adb"
 	say "   key:        /etc/apk/keys/trusttunnel.pub"
+	say "   arch list:  /etc/apk/arch + '$family'"
 else
 	# opkg appends /Packages.gz to the feed URL, so the URL must NOT name
 	# the index file (unlike the apk entry above).
@@ -164,6 +181,31 @@ else
 		|| die "cannot read the fingerprint of the feed signing key"
 	cp /etc/opkg/keys/trusttunnel.pub "/etc/opkg/keys/$_fp"
 	say "   feed key: /etc/opkg/keys/$_fp"
+	# opkg accepts packages whose arch appears in /etc/opkg/arch.conf (its
+	# arch priority list; opkg never rewrites the file itself). The client
+	# package is labeled with the CPU FAMILY name (see
+	# packages/trusttunnel-client/Makefile), so the family is added to the
+	# list, idempotently. Priority 5: below the device's own arch (10), so
+	# a subtarget-arch package from another feed would still win a name
+	# conflict; above all/noarch (1).
+	#
+	# The empty-file trap: when arch.conf is EMPTY, opkg falls back to
+	# built-in defaults (all/noarch/<device arch>) — appending to the empty
+	# file would REPLACE those defaults with just our line and make the
+	# official feeds uninstallable ("has no valid architecture"). The
+	# effective list is therefore materialized first (opkg
+	# print-architecture prints exactly the defaults).
+	mkdir -p /etc/opkg
+	if [ -s /etc/opkg/arch.conf ]; then
+		if ! grep -qx "arch $family 5" /etc/opkg/arch.conf 2>/dev/null; then
+			printf 'arch %s 5\n' "$family" >> /etc/opkg/arch.conf
+			say "   arch list: /etc/opkg/arch.conf + 'arch $family 5'"
+		fi
+	else
+		opkg print-architecture > /etc/opkg/arch.conf
+		printf 'arch %s 5\n' "$family" >> /etc/opkg/arch.conf
+		say "   arch list: /etc/opkg/arch.conf materialized + 'arch $family 5'"
+	fi
 fi
 
 say "== Updating package indexes"

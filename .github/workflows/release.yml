@@ -47,7 +47,7 @@ jobs:
           # OpenWrt VERSION (luci.mk, opkg vs apk, findrev versioning), and it
           # is covered by the two branches above, both built on the same
           # canonical x86-64 SDK. The arch-specific trusttunnel-client is NOT
-          # built here: the build-client job covers every architecture.
+          # built here: the build-client job covers every family.
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -141,8 +141,8 @@ jobs:
           echo "the built package carries the release version ${tag}"
 
       # The repository indexes are built over the MERGED artifacts in the
-      # publish-repo job (per-architecture for apk, one merged feed for
-      # opkg) — see the Assemble and index steps there.
+      # publish-repo job (per-family for apk, one merged feed for opkg) —
+      # see the Assemble and index steps there.
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -162,79 +162,50 @@ jobs:
           path: out/logs/
           if-no-files-found: ignore
 
-  # The arch-specific client: built once per OpenWrt SUBTARGET architecture,
-  # per package-manager generation. Two hard facts force this matrix:
+  # The client: built ONCE per CPU FAMILY, per package-manager generation —
+  # 5 builds per branch instead of one per OpenWrt subtarget. This is
+  # possible because:
   #
-  #  1. The vendor ships one prebuilt binary per CPU FAMILY (x86_64, aarch64,
-  #     armv7, mips, mipsel), statically linked, and packages/trusttunnel-client
-  #     downloads the family tarball by mapping $(ARCH) to the vendor name.
-  #     The binary is the same for every subtarget of the family — only the
-  #     arch LABEL in the package metadata differs.
+  #  1. The vendor ships one prebuilt binary per CPU FAMILY (x86_64,
+  #     aarch64, armv7, mips, mipsel), statically linked and built for the
+  #     family's lowest common denominator, so one binary genuinely runs on
+  #     every subtarget of the family.
   #
-  #  2. apk matches the package arch against the device's own arch
-  #     byte-for-byte (verified on openwrt/rootfs:x86_64-25.12.0: a package of
-  #     a sibling arch — aarch64_cortex-a53 on aarch64_cortex-a72 — is refused
-  #     with "error: uninstallable, arch: ..."). opkg is more lenient: it
-  #     ignores foreign-arch packages in a merged feed and picks the matching
-  #     build (verified on openwrt/rootfs:x86_64-22.03.7). The apk repositories
-  #     are therefore PER-ARCHITECTURE (apk/<arch>/ on the Pages site, like the
-  #     official OpenWrt layout), while the opkg repository stays a single
-  #     merged feed.
+  #  2. The package is labeled with the FAMILY arch (PKG_PKGARCH in
+  #     packages/trusttunnel-client/Makefile), and install.sh makes that
+  #     label acceptable to the device's package manager: it appends the
+  #     family name to /etc/apk/arch (apk's documented "additional
+  #     architectures specify compatible packages which are considered for
+  #     installation" — apk(8)) and to /etc/opkg/arch.conf. Both were
+  #     verified on the real rootfs images: an x86_64 device with "aarch64"
+  #     added to /etc/apk/arch installs an aarch64-labeled package, and
+  #     opkg does the same with "arch aarch64 5" in arch.conf.
   #
-  # Every subtarget arch whose CPU belongs to a supported family is built:
-  # the matrix below is the complete list of such archs in the 25.12 and
-  # 22.03 release trees (all SDK images exist; the excluded arm_arm926ej-s,
-  # arm_xscale, arm_fa526, mips64_*, riscv64_*, powerpc_*, i386_*,
-  # loongarch64_* archs have no vendor build and no client package — the
-  # install.sh CPU check rejects those devices up front).
+  # Each family is built on ONE representative SDK (the package content
+  # does not depend on the SDK — it is a download + repackage): x86_64,
+  # aarch64_generic, arm_cortex-a7_neon-vfpv4, mips_24kc, mipsel_24kc — all
+  # verified to exist for both 25.12.5 and 22.03.7. The archs the vendor
+  # does not ship (ARMv5/6, mips64, riscv64, powerpc, i386, loongarch64)
+  # have no client package at all — the install.sh CPU check rejects those
+  # devices up front.
   build-client:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # apk branch (25.12+): 20 architectures.
-          - { version: 25.12.5, ext: apk,  arch: x86_64 }
-          - { version: 25.12.5, ext: apk,  arch: aarch64_generic }
-          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a53 }
-          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a72 }
-          - { version: 25.12.5, ext: apk,  arch: aarch64_cortex-a76 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a5_vfpv4 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7_neon-vfpv4 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7_vfpv4 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a8_vfpv3 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9_neon }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a9_vfpv3-d16 }
-          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a15_neon-vfpv4 }
-          - { version: 25.12.5, ext: apk,  arch: mips_24kc }
-          - { version: 25.12.5, ext: apk,  arch: mips_mips32 }
-          - { version: 25.12.5, ext: apk,  arch: mipsel_24kc }
-          - { version: 25.12.5, ext: apk,  arch: mipsel_24kc_24kf }
-          - { version: 25.12.5, ext: apk,  arch: mipsel_74kc }
-          - { version: 25.12.5, ext: apk,  arch: mipsel_mips32 }
-          # opkg branch (22.03-24.10): the same list minus aarch64_cortex-a76,
-          # which exists only in the 25.12 release tree.
-          - { version: 22.03.7, ext: ipk,  arch: x86_64 }
-          - { version: 22.03.7, ext: ipk,  arch: aarch64_generic }
-          - { version: 22.03.7, ext: ipk,  arch: aarch64_cortex-a53 }
-          - { version: 22.03.7, ext: ipk,  arch: aarch64_cortex-a72 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a5_vfpv4 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7_neon-vfpv4 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7_vfpv4 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a8_vfpv3 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9_neon }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a9_vfpv3-d16 }
-          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a15_neon-vfpv4 }
-          - { version: 22.03.7, ext: ipk,  arch: mips_24kc }
-          - { version: 22.03.7, ext: ipk,  arch: mips_mips32 }
-          - { version: 22.03.7, ext: ipk,  arch: mipsel_24kc }
-          - { version: 22.03.7, ext: ipk,  arch: mipsel_24kc_24kf }
-          - { version: 22.03.7, ext: ipk,  arch: mipsel_74kc }
-          - { version: 22.03.7, ext: ipk,  arch: mipsel_mips32 }
+          # apk branch (25.12+): one build per family.
+          - { version: 25.12.5, ext: apk,  arch: x86_64,               family: x86_64 }
+          - { version: 25.12.5, ext: apk,  arch: aarch64_generic,      family: aarch64 }
+          - { version: 25.12.5, ext: apk,  arch: arm_cortex-a7_neon-vfpv4, family: armv7 }
+          - { version: 25.12.5, ext: apk,  arch: mips_24kc,            family: mips }
+          - { version: 25.12.5, ext: apk,  arch: mipsel_24kc,          family: mipsel }
+          # opkg branch (22.03-24.10): the same five.
+          - { version: 22.03.7, ext: ipk,  arch: x86_64,               family: x86_64 }
+          - { version: 22.03.7, ext: ipk,  arch: aarch64_generic,      family: aarch64 }
+          - { version: 22.03.7, ext: ipk,  arch: arm_cortex-a7_neon-vfpv4, family: armv7 }
+          - { version: 22.03.7, ext: ipk,  arch: mips_24kc,            family: mips }
+          - { version: 22.03.7, ext: ipk,  arch: mipsel_24kc,          family: mipsel }
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -260,19 +231,19 @@ jobs:
           # The apk file name carries NO arch: apk reconstructs package file
           # names from the metadata (name-version, verified), so every apk
           # build produces trusttunnel-client-<version>-r<release>.apk. The
-          # arch is appended here, or the 20 artifacts would overwrite each
+          # family is appended here, or the artifacts would overwrite each
           # other when publish-repo merges them; publish-repo strips it back
-          # when placing the file into the per-architecture repository. The
-          # ipk name (trusttunnel-client_<version>_<arch>.ipk) already
-          # contains the arch and needs no renaming.
+          # when placing the file into the per-family repository. The ipk
+          # name (trusttunnel-client_<version>_<family>.ipk) already
+          # contains the family and needs no renaming.
           if [ "${{ matrix.ext }}" = "apk" ]; then
             f=$(find out/bin/ -name 'trusttunnel-client*.apk' | head -n1)
             [ -n "$f" ] || { echo "no trusttunnel-client apk was built" >&2; exit 1; }
-            cp "$f" "dist/$(basename "$f" .apk)-${{ matrix.arch }}.apk"
-            # The arch marker lets publish-repo recover the list of
-            # architectures from the artifacts instead of keeping a second
-            # copy of the matrix in a shell loop.
-            printf '%s\n' "${{ matrix.arch }}" > "dist/ARCH-${{ matrix.arch }}"
+            cp "$f" "dist/$(basename "$f" .apk)-${{ matrix.family }}.apk"
+            # The family marker lets publish-repo recover the list of
+            # families from the artifacts instead of keeping a second copy
+            # of the matrix in a shell loop.
+            printf '%s\n' "${{ matrix.family }}" > "dist/FAMILY-${{ matrix.family }}"
           else
             f=$(find out/bin/ -name 'trusttunnel-client*.ipk' | head -n1)
             [ -n "$f" ] || { echo "no trusttunnel-client ipk was built" >&2; exit 1; }
@@ -296,10 +267,10 @@ jobs:
 
   # Assembles the package repositories that install.sh configures the
   # routers to use and deploys them to GitHub Pages via the Actions
-  # deployment: apk/<arch>/ (per-architecture directories: the noarch LuCI
-  # packages, the client built for that arch, a signed packages.adb and the
-  # signing key at apk/key-build.pub) and opkg/ (one merged feed with every
-  # architecture's packages, Packages/Packages.gz/Packages.sig and
+  # deployment: apk/<family>/ (per-CPU-family directories: the noarch LuCI
+  # packages, the client labeled with the family arch, a signed packages.adb
+  # and the signing key at apk/key-build.pub) and opkg/ (one merged feed
+  # with every family's packages, Packages/Packages.gz/Packages.sig and
   # opkg-key.pub), served from
   # https://i-zhirov.github.io/luci-app-trusttunnel-lite/. Nothing is
   # committed to any branch — the site is the workflow's direct output, so
@@ -334,8 +305,9 @@ jobs:
           name: package-22.03.7
           path: staging/luci-ipk
       # The client artifacts are merged per package-manager generation: the
-      # apk file names carry the appended arch (see the build-client job) and
-      # the ipk file names carry the arch natively, so nothing collides.
+      # apk file names carry the appended family (see the build-client job)
+      # and the ipk file names carry the family natively, so nothing
+      # collides.
       - name: Download the client artifacts (25.12 apk)
         uses: actions/download-artifact@v7
         with:
@@ -350,13 +322,13 @@ jobs:
           merge-multiple: true
 
       # The repository indexes that install.sh's repository flow needs:
-      # packages.adb per apk architecture, Packages/Packages.gz/Packages.sig
-      # for the merged opkg feed, plus the public signing keys. The GitHub
+      # packages.adb per apk family, Packages/Packages.gz/Packages.sig for
+      # the merged opkg feed, plus the public signing keys. The GitHub
       # release itself carries only the package files, for manual download.
       #
       # The package managers' expectations differ:
       #   apk  — the repository entry names the index file explicitly
-      #          (<url>/apk/<arch>/packages.adb) and apk fetches it as-is;
+      #          (<url>/apk/<family>/packages.adb) and apk fetches it as-is;
       #   opkg — the feed URL must NOT name the index (opkg appends
       #          /Packages.gz), and the signature covers the UNCOMPRESSED
       #          Packages because opkg-key zcat's the list before verifying.
@@ -370,27 +342,28 @@ jobs:
           # half (key-build.pub, committed in the repository) is carried to
           # the site and installed by install.sh into /etc/apk/keys/.
           #
-          # The repositories are per-architecture (apk is strict about the
-          # arch label; see the build-client job), and the router configures
-          # ONLY its own arch directory, so the noarch LuCI packages are
-          # copied into every one of them.
+          # The repositories are per-FAMILY (the client package is labeled
+          # with the family arch; the router accepts it because install.sh
+          # adds the family to /etc/apk/arch — see install.sh), and the
+          # router configures ONLY its own family directory, so the noarch
+          # LuCI packages are copied into every one of them.
           cp key-build.pub staging/apk/
           printf '%s\n' "$SIGN_KEY" > key-build.sec
-          # The arch list comes from the ARCH-<arch> markers in the client
-          # artifacts — no second copy of the matrix to keep in sync.
-          for m in staging/apk-pkgs/ARCH-*; do
-            [ -e "$m" ] || { echo "no client artifacts for any architecture" >&2; exit 1; }
-            arch=${m##*/}
-            arch=${arch#ARCH-}
-            mkdir -p "staging/apk/$arch"
-            cp staging/luci-apk/*.apk "staging/apk/$arch/"
-            f=$(find staging/apk-pkgs -maxdepth 1 -name "trusttunnel-client-*.$arch.apk" | head -n1)
-            [ -n "$f" ] || { echo "missing trusttunnel-client build for $arch" >&2; exit 1; }
+          # The family list comes from the FAMILY-<family> markers in the
+          # client artifacts — no second copy of the matrix to keep in sync.
+          for m in staging/apk-pkgs/FAMILY-*; do
+            [ -e "$m" ] || { echo "no client artifacts for any family" >&2; exit 1; }
+            family=${m##*/}
+            family=${family#FAMILY-}
+            mkdir -p "staging/apk/$family"
+            cp staging/luci-apk/*.apk "staging/apk/$family/"
+            f=$(find staging/apk-pkgs -maxdepth 1 -name "trusttunnel-client-*.$family.apk" | head -n1)
+            [ -n "$f" ] || { echo "missing trusttunnel-client build for $family" >&2; exit 1; }
             # apk fetches a package by the name reconstructed from its
             # metadata (name-version, no arch), so inside the repository the
             # file must be named exactly that.
-            cp "$f" "staging/apk/$arch/$(basename "$f" .$arch.apk).apk"
-            echo "  $arch: $(basename "$f")"
+            cp "$f" "staging/apk/$family/$(basename "$f" .$family.apk).apk"
+            echo "  $family: $(basename "$f")"
           done
           # alpine:edge is the only readily available apk-tools 3.x with
           # mkndx/adbsign (stable Alpine ships apk-tools 2.14). Pinned by
@@ -412,7 +385,7 @@ jobs:
           # opkg picks the package whose arch matches the device's arch list
           # out of a merged feed and ignores the rest ("has no valid
           # architecture, ignoring" — verified), so the opkg repository is a
-          # SINGLE directory with every architecture's ipk files; the arch in
+          # SINGLE directory with every family's ipk files; the family in
           # the file names keeps the builds apart.
           mkdir -p staging/opkg
           cp staging/luci-ipk/*.ipk staging/opkg/
@@ -454,32 +427,49 @@ jobs:
       # Nothing would notice a broken index or a mismatched signing key
       # until a user's apk update — so the repository is verified HERE,
       # exactly as install.sh configures it: the key in /etc/apk/keys, the
-      # index URL of the device's own arch in /etc/apk/repositories.d. A
-      # signature apk does not trust is skipped with "UNTRUSTED signature",
-      # which makes the install below fail.
+      # family appended to /etc/apk/arch, the index URL of the device's own
+      # family in /etc/apk/repositories.d. A signature apk does not trust
+      # is skipped with "UNTRUSTED signature", which makes the install
+      # below fail.
+      #
+      # Two installs prove the whole design:
+      #   * the x86_64 family repository on an x86_64 device — native arch,
+      #     and the client runs (--version);
+      #   * the aarch64 family repository on the SAME x86_64 device after
+      #     appending "aarch64" to /etc/apk/arch — proves the family-label
+      #     mechanism that install.sh relies on for every non-x86 device.
+      #     The aarch64 binary cannot run on x86_64, so only the install is
+      #     checked, not the execution.
       - name: Verify the apk installs on 25.12
         run: |
           docker run --rm \
             -v "$PWD/staging/apk:/repo:ro" \
-            openwrt/rootfs:x86-64-25.12.0 \
+            openwrt/rootfs:x86_64-25.12.0 \
             sh -c '
-              mkdir -p /var/lock /etc/apk/keys /etc/apk/repositories.d
+              mkdir -p /etc/apk/keys /etc/apk/repositories.d
               cp /repo/key-build.pub /etc/apk/keys/trusttunnel.pub
-              # The repository entry names the device'"'"'s own arch
-              # directory — apk --print-arch, exactly as install.sh
-              # constructs the URL. apk fetches the index at the URL
-              # verbatim; a bare directory URL would make it look for
-              # Alpine-style APKINDEX.tar.gz instead (see install.sh).
+              # install.sh appends the CPU family to /etc/apk/arch (apk'"'"'s
+              # documented "additional architectures specify compatible
+              # packages which are considered for installation").
+              printf "x86_64\naarch64\n" > /etc/apk/arch
+              echo "== native family: x86_64 =="
               echo "file:///repo/x86_64/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
               apk update
-              # Resolves the real dependencies (luci-base, kmod-tun, curl,
+              # Resolves the real dependencies (luci-base, kmot-tun, curl,
               # ...) against the version'"'"'s official feeds, plus the
-              # arch-specific trusttunnel-client from the repository.
+              # x86_64 trusttunnel-client from the repository.
               apk add luci-app-trusttunnel-lite
               # The client is a hard dependency of the package; --version
               # proves the right binary landed and runs (statically linked,
               # no libc worries on musl).
               trusttunnel_client --version
+              echo "== family mechanism: aarch64 on an x86_64 device =="
+              echo "file:///repo/aarch64/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
+              apk update
+              apk add trusttunnel-client
+              # The aarch64 binary is present but cannot run here; the arch
+              # acceptance is what this install proves.
+              ls -la /opt/trusttunnel_client/trusttunnel_client
             '
       # The ipk is built once, on the oldest SDK (22.03), and the release
       # design relies on it installing on 23.05/24.10 because the
@@ -488,10 +478,18 @@ jobs:
       # version — with the same signed-feed arrangement install.sh
       # configures on a router. Building the package again on those SDKs
       # would prove nothing about the 22.03-built file.
+      #
+      # Two installs per image prove the whole design:
+      #   * luci-app-trusttunnel-lite pulls the x86_64 client (native
+      #     family) and it runs (--version);
+      #   * with "arch aarch64 5" appended to /etc/opkg/arch.conf — exactly
+      #     what install.sh does — opkg accepts the aarch64-labeled client
+      #     from the same merged feed. The aarch64 binary cannot run on
+      #     x86_64, so only the install and the metadata are checked.
       - name: Verify the ipk installs on 23.05/24.10
         run: |
           for img in x86-64-23.05.6 x86-64-24.10.8; do
-            echo "== openwrt/rootfs:$img =="
+            echo "== openwrt/rootfs:$img (native x86_64 family) =="
             docker run --rm \
               -v "$PWD/staging/opkg:/repo:ro" \
               "openwrt/rootfs:$img" \
@@ -513,11 +511,34 @@ jobs:
                 opkg install luci-app-trusttunnel-lite
                 trusttunnel_client --version
               '
+            echo "== openwrt/rootfs:$img (family mechanism: aarch64) =="
+            docker run --rm \
+              -v "$PWD/staging/opkg:/repo:ro" \
+              "openwrt/rootfs:$img" \
+              sh -c '
+                mkdir -p /var/lock /etc/opkg/keys
+                cp /repo/opkg-key.pub /etc/opkg/keys/trusttunnel.pub
+                fp=$(usign -F -p /etc/opkg/keys/trusttunnel.pub)
+                cp /etc/opkg/keys/trusttunnel.pub "/etc/opkg/keys/$fp"
+                echo "src/gz trusttunnel file:///repo" > /etc/opkg/customfeeds.conf
+                # install.sh appends "arch <family> 5" to
+                # /etc/opkg/arch.conf; when the file is empty (as in this
+                # rootfs) opkg falls back to built-in defaults, so the
+                # effective list is materialized first — exactly what
+                # install.sh does, because appending to the empty file
+                # would replace the defaults and break the official feeds.
+                opkg print-architecture > /etc/opkg/arch.conf
+                printf "arch aarch64 5\n" >> /etc/opkg/arch.conf
+                opkg update
+                opkg install trusttunnel-client
+                opkg info trusttunnel-client | grep -E "^(Package|Version|Architecture)"
+                ls -la /opt/trusttunnel_client/trusttunnel_client
+              '
           done
       # The release assets are the package files: the apks from 25.12 and
-      # the ipks from 22.03, every architecture included (the client apks
-      # carry the appended arch in the name). Uploading from here — rather
-      # than from each matrix job — gives the release a single writer: the
+      # the ipks from 22.03, every family included (the client apks carry
+      # the appended family in the name). Uploading from here — rather than
+      # from each matrix job — gives the release a single writer: the
       # matrix jobs would otherwise update the same release concurrently.
       - name: Publish the release assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -538,7 +559,7 @@ jobs:
           # Directory indexes for humans: Pages serves no directory
           # listing, so the bare apk/ and opkg/ URLs would 404 in a
           # browser. The package managers never fetch the bare URLs (apk
-          # fetches <url>/apk/<arch>/packages.adb, opkg appends
+          # fetches <url>/apk/<family>/packages.adb, opkg appends
           # /Packages.gz), but a browsable page makes the repositories
           # discoverable. The templates live in the repository (repo-site/).
           cp repo-site/apk-index.html site/apk/index.html
