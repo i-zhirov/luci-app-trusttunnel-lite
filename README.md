@@ -56,8 +56,13 @@ What the installer does:
    subdirectory) and a signed opkg repository (`opkg/` subdirectory) on
    the GitHub Pages site, deployed by the release workflow — and installs
    the corresponding public signing key.
-3. Installs dependencies: `kmod-tun`, `ip-full`, `curl`, `ca-bundle`
-   (no `dnsmasq-full` — the fork does not need nftset in dnsmasq).
+3. Installs dependencies: `kmod-tun`, `ip-full`, `nftables`, `curl`,
+   `ca-bundle` (no `dnsmasq-full` — the fork does not need nftset in
+   dnsmasq). Two of them are runtime dependencies of the client binaries
+   themselves, not of the app: `kmod-tun` (the client creates its own tun
+   device) and `ca-bundle` (the client verifies the endpoint's TLS
+   certificate against the CA bundle). `ip-full`, `nftables` and `curl`
+   serve the app's own routing and diagnostics.
 4. Installs `luci-app-trusttunnel` and the translation package from
    the repository.
 5. The client binaries install automatically as a dependency
@@ -167,8 +172,8 @@ Flags:
   settings too;
 - `-c` — keep `/etc/config/trusttunnel`, do not ask.
 
-The dependencies (`kmod-tun`, `ip-full`, `curl`, `ca-bundle`) are left
-alone — they are shared and may be needed by other packages.
+The dependencies (`kmod-tun`, `ip-full`, `nftables`, `curl`, `ca-bundle`)
+are left alone — they are shared and may be needed by other packages.
 
 If you prefer to uninstall by hand, step by step:
 

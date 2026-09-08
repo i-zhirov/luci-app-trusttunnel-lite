@@ -473,9 +473,10 @@ jobs:
               # Alpine-style APKINDEX.tar.gz instead (see install.sh).
               echo "file:///repo/x86_64/packages.adb" > /etc/apk/repositories.d/trusttunnel.list
               apk update
-              # Resolves the real dependencies (luci-base, kmod-tun, curl,
-              # ...) against the version'"'"'s official feeds, plus the
-              # arch-specific trusttunnel-client from the repository.
+              # Resolves the real dependencies (luci-base, kmod-tun,
+              # ca-bundle, curl, ...) against the version'"'"'s official
+              # feeds, plus the arch-specific trusttunnel-client from the
+              # repository.
               apk add luci-app-trusttunnel
               # The client is a hard dependency of the package; --version
               # proves the right binary landed and runs (statically linked,
@@ -510,8 +511,9 @@ jobs:
                 echo "src/gz trusttunnel file:///repo" > /etc/opkg/customfeeds.conf
                 opkg update
                 # Resolves the real dependencies (luci-base, kmod-tun,
-                # curl, ...) against the version'"'"'s official feeds, plus
-                # the x86_64 trusttunnel-client from the merged feed.
+                # ca-bundle, curl, ...) against the version'"'"'s official
+                # feeds, plus the x86_64 trusttunnel-client from the merged
+                # feed.
                 opkg install luci-app-trusttunnel
                 /opt/trusttunnel_client/trusttunnel_client --version
               '

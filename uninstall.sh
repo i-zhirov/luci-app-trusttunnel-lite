@@ -18,10 +18,10 @@
 # confirmation: the former because the package manager knows nothing about
 # it and it may be needed (e.g. during a temporary teardown), the latter
 # because the file is declared in conffiles and a reinstall without it
-# loses the settings. Dependencies (kmod-tun, ip-full, curl, ca-bundle) are
-# not touched at all: they are shared and may be used by other packages —
-# apk itself removes the ones nobody needs after the removal, opkg keeps
-# them.
+# loses the settings. Dependencies (kmod-tun, ip-full, nftables, curl,
+# ca-bundle) are not touched at all: they are shared and may be used by
+# other packages — apk itself removes the ones nobody needs after the
+# removal, opkg keeps them.
 #
 # Flags:
 #   -y — ask no questions: remove both the firewall zone and the settings;

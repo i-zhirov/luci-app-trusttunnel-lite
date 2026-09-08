@@ -89,8 +89,18 @@ define Package/trusttunnel-client
 	CATEGORY:=Network
 	TITLE:=TrustTunnel client binaries
 	URL:=https://github.com/TrustTunnel/TrustTunnelClient
-	# Statically linked: no dependencies.
-	DEPENDS:=
+	# Statically linked: no library dependencies. The binaries still need
+	# two things from the SYSTEM at runtime:
+	#   - the tun KERNEL MODULE (kmod-tun) — they create their own tun
+	#     device, which requires /dev/net/tun;
+	#   - a CA bundle (ca-bundle) — the client does TLS against the
+	#     endpoint, and BoringSSL takes its trust store from SSL_CERT_FILE
+	#     only; the bundle FILE must exist on the router (the LuCI app's
+	#     init script is what locates it and exports the variable).
+	# Declared here, on the package whose binaries use them;
+	# luci-app-trusttunnel gets both transitively and deliberately does
+	# not repeat them.
+	DEPENDS:=+kmod-tun +ca-bundle
 endef
 
 # The binaries install to /opt/trusttunnel_client, the path the LuCI backend
