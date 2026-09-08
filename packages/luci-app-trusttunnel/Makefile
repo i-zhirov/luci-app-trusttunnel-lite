@@ -30,7 +30,16 @@ LUCI_DESCRIPTION:=Runs the TrustTunnel client on OpenWrt and routes LAN \
 # /opt/trusttunnel_client are what this package configures and runs. apk
 # and opkg pull it from the same repository automatically, which is what
 # makes the client update with `apk upgrade` / `opkg upgrade`.
-LUCI_DEPENDS:=+trusttunnel-client +luci-base +kmod-tun +ip-full +curl +ca-bundle +ucode-mod-math
+#
+# Every dependency below is used by THIS package's own files — nothing is
+# carried for the client's sake: kmod-tun and ca-bundle live on
+# trusttunnel-client (the binaries create the tun device and do TLS
+# against a CA bundle) and arrive here transitively. ip-full (`ip rule`/
+# `ip route` tables), nftables (`nft` is called directly by the routing
+# helper and the diagnostics — fw4 pulling it on stock images is not
+# enough), curl (update check, diagnostics) and ucode-mod-math are all
+# invoked by this package's files.
+LUCI_DEPENDS:=+trusttunnel-client +luci-base +ip-full +nftables +curl +ucode-mod-math
 # Otherwise luci.mk would substitute the address of LuCI itself, and `apk info`
 # would send for support to the wrong place.
 LUCI_URL:=https://github.com/i-zhirov/trusttunnel-openwrt

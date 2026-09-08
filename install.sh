@@ -174,10 +174,18 @@ else
 fi
 
 say "== Installing dependencies"
+# The union of the two packages' declared dependencies, split by who
+# actually uses them: kmod-tun and ca-bundle are RUNTIME dependencies of
+# the trusttunnel-client binaries (they create their own tun device and
+# verify the endpoint's TLS certificate against the CA bundle), while
+# ip-full, nftables and curl belong to luci-app-trusttunnel (routing,
+# marking, update check — see the Makefiles). Installed upfront so a
+# missing one fails the install early with a clear message instead of a
+# bare "cannot satisfy the dependency".
 if [ "$PM" = "apk" ]; then
-	apk add kmod-tun ip-full curl ca-bundle
+	apk add kmod-tun ip-full nftables curl ca-bundle
 else
-	opkg install kmod-tun ip-full curl ca-bundle
+	opkg install kmod-tun ip-full nftables curl ca-bundle
 fi
 
 # The service is stopped before the files are replaced: otherwise the
