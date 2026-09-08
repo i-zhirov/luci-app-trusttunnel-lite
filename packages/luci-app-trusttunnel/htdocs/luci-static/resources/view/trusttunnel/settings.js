@@ -54,6 +54,20 @@ return view.extend({
 								uci.set('trusttunnel', 'endpoint', 'certificate', res.certificate);
 							if (res.addresses && res.addresses.length)
 								uci.set('trusttunnel', 'endpoint', 'address', res.addresses);
+							if (res.custom_sni)
+								uci.set('trusttunnel', 'endpoint', 'custom_sni', res.custom_sni);
+							if (res.client_random)
+								uci.set('trusttunnel', 'endpoint', 'client_random', res.client_random);
+							if (res.protocol)
+								uci.set('trusttunnel', 'endpoint', 'protocol', res.protocol);
+							if (res.anti_dpi != null)
+								uci.set('trusttunnel', 'endpoint', 'anti_dpi', res.anti_dpi);
+							if (res.has_ipv6 != null)
+								uci.set('trusttunnel', 'endpoint', 'has_ipv6', res.has_ipv6);
+							if (res.skip_verification != null)
+								uci.set('trusttunnel', 'endpoint', 'skip_verification', res.skip_verification);
+							if (res.dns_upstreams && res.dns_upstreams.length)
+								uci.set('trusttunnel', 'endpoint', 'dns_upstream', res.dns_upstreams);
 
 							// uci.set() keeps changes only in the browser's
 							// memory. A page reload throws them away, so the
@@ -142,6 +156,60 @@ return view.extend({
 		o = s.option(form.Flag, 'post_quantum', _('Post-quantum key exchange'));
 		o.default = '1';
 
+		o = s.option(form.Value, 'custom_sni', _('Custom SNI'),
+			_('Overrides the TLS Server Name. Needed when the server answers on an address that does not match its host name, e.g. behind a CDN or an IP-only setup.'));
+		o.placeholder = 'example.com';
+		o.optional = true;
+		o.validate = function(section_id, value) {
+			if (!value) return true;
+			var v = value.toLowerCase();
+			if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(v))
+				return _('Use the format example.com');
+			return true;
+		};
+
+		// The format is the client's own: a hex prefix and an optional
+		// mask, `prefix[/mask]`. The GUI client validates it the same way —
+		// even length (whole bytes), prefix and mask of equal length, at
+		// most 64 characters.
+		o = s.option(form.Value, 'client_random', _('Client Random, hex prefix'),
+			_('TLS Client Random prefix and mask. Anti-scan servers accept only clients with the matching prefix. Format: abcdef or abcdef/0f0f0f.'));
+		o.placeholder = '0a0b0c/0f0f0f';
+		o.optional = true;
+		o.validate = function(section_id, value) {
+			if (!value) return true;
+			if (value.length > 64)
+				return _('At most 64 characters');
+			var parts = value.split('/');
+			if (parts.length > 2 || !parts[0] || !/^[0-9a-f]+$/i.test(parts[0]))
+				return _('Enter hex digits only, e.g. 0a0b0c or 0a0b0c/0f0f0f');
+			if (parts[0].length % 2 !== 0)
+				return _('The hex prefix must be a whole number of bytes');
+			if (parts.length === 2) {
+				if (!/^[0-9a-f]+$/i.test(parts[1]) || parts[1].length % 2 !== 0)
+					return _('The mask must be hex digits, a whole number of bytes');
+				if (parts[1].length !== parts[0].length)
+					return _('The mask must be the same length as the prefix');
+			}
+			return true;
+		};
+
+		o = s.option(form.ListValue, 'routing_profile', _('Routing profile'),
+			_('The named profile that decides what goes through the tunnel. Profiles are managed on the Routing tab.'));
+		o.value('', _('None — everything through the tunnel'));
+		// The profile names come from the loaded UCI state; the stored
+		// value is added to the list too, so a reference to a deleted
+		// profile still saves (it falls back to the legacy behavior).
+		var profiles = data.trusttunnel['routing_profile'] || [];
+		var current = data.trusttunnel.endpoint.routing_profile;
+		var currentKnown = false;
+		for (var i = 0; i < profiles.length; i++) {
+			o.value(profiles[i].name, profiles[i].name);
+			if (profiles[i].name === current) currentKnown = true;
+		}
+		if (current && !currentKnown)
+			o.value(current, current);
+
 		o = s.option(form.Flag, 'has_ipv6', _('Server carries IPv6'));
 		o.default = '1';
 
@@ -169,22 +237,65 @@ return view.extend({
 		o.value('1.1.1.1:53', 'Cloudflare — ' + _('plain DNS'));
 		o.value('9.9.9.9:53', 'Quad9 — ' + _('plain DNS'));
 
-		// --- Exclusions ----------------------------------------------------
-		s = m.section(form.NamedSection, 'domains', 'domains', _('Exclusions'));
-		s.description = _('Everything goes through the tunnel; these entries always go out directly. The client applies them by SNI, after the kernel has already marked the traffic.');
+		// --- Routing -------------------------------------------------------
+		// Named routing profiles, mirroring the GUI client: each profile has
+		// a mode and two rule lists, and the Server tab assigns one to the
+		// endpoint. The client applies mode + rules itself (vpn_mode and
+		// exclusions in client.toml), after the kernel has already marked
+		// the traffic — the same mechanism the old flat "do not bypass" list
+		// used, just with the other half of the selection available too.
+		//
+		// The legacy domains.direct list is NOT shown here: on upgrade it is
+		// moved into the Default profile's bypass rules (uci-defaults), and
+		// in the schema it remains only as the fallback for when no profile
+		// is assigned.
+		s = m.section(form.Section, 'routing_profile', _('Routing profiles'));
+		s.addremove = true;
+		s.anonymous = true;
+		s.sortable = true;
+		s.description = _('A profile decides what goes through the tunnel. VPN mode tunnels everything except the bypass rules; bypass mode tunnels only the VPN rules. Rules accept a domain, *.domain, an IP address, IP:port, or a CIDR range.');
 
-		o = s.option(form.DynamicList, 'direct', _('Do not bypass these'),
-			_('Always sent out directly. Accepts a domain, *.domain, an IP address or a CIDR range.'));
-		o.placeholder = 'bank.example';
+		o = s.option(form.Value, 'name', _('Name'),
+			_('Unique name; the Server tab assigns a profile by it.'));
+		o.optional = false;
 		o.validate = function(section_id, value) {
+			if (!value) return _('Name is required');
+			var secs = data.trusttunnel['routing_profile'] || [];
+			for (var i = 0; i < secs.length; i++)
+				if (secs[i]['.name'] !== section_id && secs[i].name === value)
+					return _('Another profile already has this name');
+			return true;
+		};
+
+		o = s.option(form.ListValue, 'mode', _('Mode'));
+		o.value('vpn', _('VPN — tunnel everything except the bypass rules'));
+		o.value('bypass', _('Bypass — tunnel only the VPN rules'));
+		o.default = 'vpn';
+		o.rmempty = false;
+
+		function validateRule(value) {
 			if (!value) return true;
 			var v = value.toLowerCase();
+			// A wildcard port matches any destination on that port.
+			if (/^\*:[0-9]+$/.test(v)) return true;
 			if (/^\*\./.test(v)) v = v.slice(2);
-			if (/^[0-9a-f:.\/]+$/.test(v)) return true;
+			// IP, IP:port, IPv6, [v6]:port, CIDR — the client validates the
+			// details; the UI only needs to keep obvious junk out.
+			if (/^[0-9a-f:.\[\]\/]+$/.test(v)) return true;
 			if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(v))
 				return _('Not a valid domain, IP address or CIDR range');
 			return true;
-		};
+		}
+
+		o = s.option(form.DynamicList, 'vpn_rules', _('VPN rules'),
+			_('Sent through the tunnel: in bypass mode these are the only destinations that go through; in VPN mode the list has no effect.'));
+		o.placeholder = 'telegram.org';
+		o.validate = validateRule;
+
+		o = s.option(form.DynamicList, 'bypass_rules', _('Bypass rules'),
+			_('Always sent out directly: in VPN mode these are the only destinations that bypass the tunnel; in bypass mode the list has no effect.'));
+		o.placeholder = 'bank.example';
+		o.validate = validateRule;
 
 		// --- Network -------------------------------------------------------
 		s = m.section(form.NamedSection, 'network', 'network', _('Network'));

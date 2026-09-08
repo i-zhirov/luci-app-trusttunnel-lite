@@ -4,14 +4,21 @@ A lightweight fork of
 [the original luci-app-trusttunnel](https://github.com/NooBiToo/TrustTunnelOpenWrt)
 (GPL-2.0) for OpenWrt 25.12+ (apk).
 
-**Full-tunnel only, no domain lists.** The original package routes *selected*
-domains into the tunnel using dnsmasq `nftset=` sets and community lists from
-itdoginfo/allow-domains. This fork removes the entire list machinery —
-no lists, no list downloads, no cron, no dnsmasq-full requirement, no
-list-DNS options — and keeps the rest: the TrustTunnel client as a procd
-service, **all LAN traffic through the tunnel**, the firewall-level killswitch
-(blackhole route), "do not bypass" exclusions, and the LuCI interface
-(Status / Settings / Diagnostics).
+**No community domain lists, routing profiles instead.** The original package
+routes *selected* domains into the tunnel using dnsmasq `nftset=` sets and
+community lists from itdoginfo/allow-domains. This fork removes the entire
+list machinery — no lists, no list downloads, no cron, no dnsmasq-full
+requirement, no list-DNS options — and keeps the rest: the TrustTunnel client
+as a procd service, the firewall-level killswitch (blackhole route), and the
+LuCI interface (Status / Settings / Diagnostics).
+
+Instead of the lists, routing follows the official GUI client's model:
+**named routing profiles** (VPN / Bypass modes) with two rule lists each
+(domains, `*.domain`, IP, IP:port, CIDR), one profile assigned to the
+server. The client applies the mode and the rules itself, after the kernel
+has already marked the traffic — no dnsmasq involvement at all. Without an
+assigned profile the legacy behavior applies: everything through the tunnel
+with the flat "do not bypass" list as exclusions.
 
 Everything on the router that the fork touches:
 
@@ -79,9 +86,15 @@ Open **LuCI → Services → TrustTunnel → Settings**:
 
 1. **Server** — press **Import…** and paste the config your server generated
    (config file text or a `tt://` link), or fill in addresses, TLS host name,
-   user and password by hand.
-2. **Exclusions** (optional) — domains, IPs or CIDRs that always go out
-   directly, bypassing the tunnel ("do not bypass").
+   user and password by hand. The import fills every endpoint field the
+   server can hand out, including `custom_sni`, `client_random`, the
+   transport, the anti-DPI / post-quantum / IPv6 / verification flags and the
+   DNS upstreams.
+2. **Routing** — keep the seeded **Default** profile (VPN mode) or create
+   your own. Each profile has a mode — **VPN** (tunnel everything except the
+   bypass rules) or **Bypass** (tunnel only the VPN rules) — and two rule
+   lists accepting a domain, `*.domain`, an IP address, `IP:port` or a CIDR
+   range. Assign the profile to the server on the Server tab.
 3. **General** — turn on **Start on boot**, **Save & Apply**, then press
    **Start** on the Status page.
 
@@ -92,7 +105,17 @@ uci set trusttunnel.endpoint.hostname='vpn.example.com'
 uci add_list trusttunnel.endpoint.address='203.0.113.10:443'
 uci set trusttunnel.endpoint.username='alice'
 uci set trusttunnel.endpoint.password='secret'
-uci add_list trusttunnel.domains.direct='bank.example'
+uci add_list trusttunnel.endpoint.dns_upstream='tls://1.1.1.1'
+uci set trusttunnel.endpoint.custom_sni='vpn.example.com'
+uci set trusttunnel.endpoint.client_random='0a0b0c/0f0f0f'
+
+# A bypass-mode profile: only the VPN rules go through the tunnel.
+p=$(uci add trusttunnel routing_profile)
+uci set trusttunnel."$p".name='Games'
+uci set trusttunnel."$p".mode='bypass'
+uci add_list trusttunnel."$p".vpn_rules='telegram.org'
+uci set trusttunnel.endpoint.routing_profile='Games'
+
 uci set trusttunnel.main.enabled='1'
 uci commit trusttunnel
 /etc/init.d/trusttunnel enable
@@ -105,19 +128,23 @@ uci commit trusttunnel
   table 880 through the client's tun device. The router's own traffic goes
   out directly by default (enable "Route the router's own traffic too" to
   change that).
+- **Routing profiles** decide, inside the client, what happens to a
+  connection after it entered the tunnel: in VPN mode everything except the
+  bypass rules is tunneled; in bypass mode only the VPN rules are. Domains
+  are matched by SNI, IPs and CIDRs by destination — the same mechanism the
+  old flat "do not bypass" list used, now with the other half of the
+  selection available too.
 - **Killswitch:** while the tunnel device is down, marked traffic falls into
   a blackhole route — dropped, not leaked to the provider. The client's own
   (application-level) killswitch is disabled in the generated config so the
   two do not fight over the firewall.
-- **Exclusions** are applied by the client itself, by SNI, after kernel
-  marking.
 - **DNS:** the fork does not intercept or redirect DNS. LAN clients keep
   using the router's resolver as configured in OpenWrt; the tunnel carries
   the traffic itself.
-- **Status page** shows the service state, the client's tun device, the
-  version of everything, and the client log. **Diagnostics** walks the whole
-  chain (config → client → tun → routing → firewall → network) with a
-  verdict and a hint for every check.
+- **Status page** shows the service state, the assigned profile, the
+  client's tun device, the version of everything, and the client log.
+  **Diagnostics** walks the whole chain (config → client → tun → routing →
+  firewall → network) with a verdict and a hint for every check.
 
 ## Updating
 
@@ -210,19 +237,25 @@ delete the file if you do not want them.
 
 | | original | this fork |
 |---|---|---|
-| Mode | selective (by list) or full | **full only** |
+| Mode | selective (by list) or full | **routing profiles** (vpn/bypass), client-side |
 | Domain lists (itdoginfo/allow-domains) | yes | **no** |
 | dnsmasq-full requirement | yes (for selective) | **no** |
 | List downloads / cron / update_lists | yes | **no** |
 | List-DNS options, DoH proxy, DNS interception | yes | **no** |
 | Killswitch (blackhole route) | yes | **yes** |
-| "Do not bypass" exclusions | yes | **yes** (only place for exclusions) |
+| Split tunneling | list-based, dnsmasq sets | **profile rules (domains/`*.domain`/IP/IP:port/CIDR)**, applied by the client |
 | LuCI pages, import, diagnostics, update check | yes | **yes** (trimmed) |
 
 Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
 `lists` section, `network.list_dns`, `network.list_resolver`,
 `network.list_doh_url`, `network.list_doh_port`, `network.doh_network`,
 `network.intercept_dns`, `domains.bypass`.
+
+Settings that were added: `endpoint.custom_sni`, `endpoint.client_random`,
+`endpoint.routing_profile`, and the `routing_profile` sections (`name`,
+`mode`, `vpn_rules`, `bypass_rules`). `domains.direct` remains in the schema
+as the legacy fallback for when no profile is assigned; on upgrade its values
+are moved into the Default profile's bypass rules.
 
 ## Notes and caveats
 

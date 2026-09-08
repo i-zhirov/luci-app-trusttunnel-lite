@@ -37,17 +37,49 @@ for o in enabled log_level; do scalar main "$o"; done
 # certificate into a separate file and passes it to gen-config as its
 # second argument.
 for o in hostname username password protocol anti_dpi post_quantum \
-		skip_verification has_ipv6; do
+		skip_verification has_ipv6 custom_sni client_random \
+		routing_profile; do
 	scalar endpoint "$o"
 done
 listopt endpoint address
 listopt endpoint dns_upstream
 
+# The ASSIGNED routing profile, resolved here by endpoint.routing_profile
+# (a profile NAME, unique across the routing_profile sections). It is
+# exported under the canonical key prefix routing_profile.<option>, without
+# the UCI section id: records consumers (gen-config, the apply diff, the
+# ucode backend) need one resolved view, not the raw sections.
+#
+# The keys are mirrored in the completeness test (test_init_apply.sh reads
+# the marker line below); keep them in sync with the loop options.
+# schema-keys: routing_profile.name routing_profile.mode routing_profile.vpn_rules routing_profile.bypass_rules
+profile_want=$(uci -q get trusttunnel.endpoint.routing_profile 2>/dev/null) || profile_want=""
+profile_sec=""
+# config_foreach + config_get, invisible to the linter.
+# shellcheck disable=SC2317,SC2154
+find_profile() {
+	config_get _pname "$1" name
+	[ "$_pname" = "$profile_want" ] && profile_sec="$1"
+}
+if [ -n "$profile_want" ]; then
+	config_foreach find_profile routing_profile
+fi
+if [ -n "$profile_sec" ]; then
+	for o in name mode; do
+		config_get _v "$profile_sec" "$o"
+		[ -n "${_v:-}" ] && printf 'routing_profile.%s\t%s\n' "$o" "$_v"
+	done
+	for o in vpn_rules bypass_rules; do
+		_KEY="routing_profile.$o"
+		config_list_foreach "$profile_sec" "$o" _emit_one
+	done
+fi
+
 # The "device" option is GONE here: the client picks the device name and
-# no such setting exists. The "selective" mode and the whole list machinery
-# (list_dns, list_resolver, doh_network, intercept_dns) were removed: the
-# fork sends all traffic through the tunnel, so those options are
-# meaningless.
+# no such setting exists. The original list machinery (list_dns,
+# list_resolver, doh_network, intercept_dns) was removed: the fork has no
+# community lists, and its "selective" mode is the routing profile's bypass
+# mode, which needs no per-list resolver settings.
 for o in mtu table fwmark blackhole_on_down include_router_traffic \
 		lan_devices; do
 	scalar network "$o"

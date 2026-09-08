@@ -85,6 +85,16 @@ assert_eq "reload" "$(change_class network.include_router_traffic)" \
 
 assert_eq "restart" "$(change_class domains.direct)" \
 	"exclusions go into client.toml — a client restart is needed"
+assert_eq "restart" "$(change_class routing_profile.name)" \
+	"the assigned profile name goes into client.toml"
+assert_eq "restart" "$(change_class routing_profile.mode)" \
+	"the profile mode goes into client.toml"
+assert_eq "restart" "$(change_class routing_profile.vpn_rules)" \
+	"the vpn rules go into client.toml"
+assert_eq "restart" "$(change_class routing_profile.bypass_rules)" \
+	"the bypass rules go into client.toml"
+assert_eq "restart" "$(change_class endpoint.routing_profile)" \
+	"switching the assigned profile restarts the client"
 assert_eq "restart" "$(change_class endpoint.hostname)" \
 	"the server address requires a client restart"
 assert_eq "restart" "$(change_class endpoint.password)" \
@@ -150,6 +160,18 @@ assert_eq "restart_full" "$(classify_change "$old" "$new")" \
 # a single key.
 schema_keys() {
 	awk '
+		# The explicit marker in uci-export: the ASSIGNED routing profile is
+		# exported under the canonical prefix routing_profile.<option>, and
+		# the marker line lists the options so the completeness check stays
+		# in sync with them. Must come BEFORE the for-loop branches — this
+		# line does not match them, but the order keeps the intent clear.
+		/^# schema-keys: / {
+			line = $0
+			sub(/^# schema-keys: /, "", line)
+			n = split(line, a, /[ \t]+/)
+			for (i = 1; i <= n; i++) if (a[i] != "") print a[i]
+			next
+		}
 		# One-line loop: `for o in a b c; do scalar <section> "$o"; done`.
 		# This branch must stand BEFORE the general one: that one consumes
 		# the line whole via `next`, and without this check all main.* keys
@@ -206,7 +228,7 @@ count=$(printf '%s\n' "$keys" | grep -c .)
 
 # A sanity check of the parse itself: if it breaks and returns nothing or a
 # handful of keys, the completeness check would turn green without checking
-# anything. The schema at the time of writing has 19 keys; the threshold is
+# anything. The schema at the time of writing has 25 keys; the threshold is
 # deliberately lower so it does not fail on a legitimate addition or removal
 # of one, but higher than what a parse with a lost one-line-loop branch
 # yields.
