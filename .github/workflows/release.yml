@@ -537,14 +537,6 @@ jobs:
           cp staging/opkg/*.ipk staging/opkg/Packages staging/opkg/Packages.gz \
              staging/opkg/Packages.sig staging/opkg/opkg-key.pub site/opkg/
           rm -rf staging
-          # Directory indexes for humans: Pages serves no directory
-          # listing, so the bare apk/ and opkg/ URLs would 404 in a
-          # browser. The package managers never fetch the bare URLs (apk
-          # fetches <url>/apk/<arch>/packages.adb, opkg appends
-          # /Packages.gz), but a browsable page makes the repositories
-          # discoverable. The templates live in the repository (repo-site/).
-          cp repo-site/apk-index.html site/apk/index.html
-          cp repo-site/opkg-index.html site/opkg/index.html
           # The theme's layout only shows a commented-out favicon example;
           # browsers still auto-request /favicon.ico, so a real one is
           # shipped to keep that request from 404ing.
@@ -553,6 +545,10 @@ jobs:
           # the real homepage template (main/repo-site/README.md) instead
           # of the stale Pages source branch.
           cp repo-site/_config.yml site/_config.yml
+          # The index pages' layout: the theme's default minus the "Improve
+          # this page" footer, which would point at a generated file that is
+          # not in the repository (see repo-site/_layouts/repo-index.html).
+          cp -r repo-site/_layouts site/_layouts
           # The site's homepage: the template lives in the repository
           # (repo-site/README.md) and the Jekyll build below renders it as
           # index.html — the same behavior branch-based Pages had. The
@@ -560,9 +556,54 @@ jobs:
           # renders the markdown with the GitHub Pages theme.
           cp repo-site/README.md site/README.md
           sed -i "s/__TAG__/$GITHUB_REF_NAME/g" site/README.md
-      # The official GitHub Pages Jekyll builder: renders README.md as the
-      # homepage (index.html) and copies the package files through
-      # byte-identically.
+          # Directory indexes for humans: Pages serves no directory
+          # listing, so the bare apk/, apk/<arch>/ and opkg/ URLs would 404
+          # in a browser. The package managers never fetch the bare URLs
+          # (apk fetches <url>/apk/<arch>/packages.adb, opkg appends
+          # /Packages.gz), but a browsable page makes the repositories
+          # discoverable. The pages are markdown templates from repo-site/
+          # with placeholders substituted here; the Jekyll build below then
+          # renders them with the GitHub Pages theme.
+          #
+          # The apk index: the architecture list is generated from the
+          # assembled repositories — no second copy of the build-client
+          # matrix to keep in sync.
+          arch_list=$(mktemp)
+          for d in site/apk/*/; do
+            arch=${d%/}
+            arch=${arch##*/}
+            printf -- '- [%s](%s/)\n' "$arch" "$arch"
+          done > "$arch_list"
+          sed "/__ARCH_LIST__/{
+            r $arch_list
+            d
+          }" repo-site/apk-index.md > site/apk/index.md
+          rm -f "$arch_list"
+          # The opkg index: a fully static template.
+          cp repo-site/opkg-index.md site/opkg/index.md
+          # Per-architecture apk indexes: the same template for every
+          # architecture, with the arch and the file list substituted. The
+          # list is generated from each assembled repository directory, so
+          # it always names the packages actually served there.
+          files=$(mktemp)
+          for d in site/apk/*/; do
+            arch=${d%/}
+            arch=${arch##*/}
+            (cd "$d" && {
+              [ -f packages.adb ] && printf -- '- [packages.adb](packages.adb) — signed repository index\n'
+              for f in *.apk; do
+                [ -f "$f" ] && printf -- '- [%s](%s)\n' "$f" "$f"
+              done
+            }) > "$files"
+            sed -e "s/__ARCH__/$arch/g" -e "/__FILES__/{
+              r $files
+              d
+            }" repo-site/apk-arch-index.md > "$d/index.md"
+          done
+          rm -f "$files"
+      # The official GitHub Pages Jekyll builder: renders the markdown
+      # templates (README.md as the homepage, the index pages) and copies
+      # the package files through byte-identically.
       - name: Build the site with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
