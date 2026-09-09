@@ -236,7 +236,7 @@ client's `setup_wizard --settings` path is the ultimate oracle.
 
 ## Tasks
 
-### [ ] Task 1: Capture golden outputs from the current implementation
+### [x] Task 1: Capture golden outputs from the current implementation
 
 Transient evidence for the byte-equivalence oracle. Everything lives in a
 scratch directory outside the repo; nothing is committed.
@@ -248,7 +248,7 @@ scratch directory outside the repo; nothing is committed.
 
 - Create (scratch, outside repo): `/tmp/tt04-genconfig-goldens/`
 
-- [ ] **Step 1: Create the scratch area and preserve the old binary**
+- [x] **Step 1: Create the scratch area and preserve the old binary**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -260,7 +260,7 @@ Expected: `$G/old/gen-config` exists and is executable. This preserved copy
 is what the final byte-diff runs against — the repo file gets replaced in
 Task 3.
 
-- [ ] **Step 2: Create the fixed PEM fixture**
+- [x] **Step 2: Create the fixed PEM fixture**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -270,7 +270,7 @@ printf -- '-----BEGIN CERTIFICATE-----\nMIIBdummy\n-----END CERTIFICATE-----\n' 
 Expected: 3-line dummy PEM **with** trailing newline (the exact content the
 rewritten test will use, so goldens and tests cover the same PEM path).
 
-- [ ] **Step 3: Capture the six golden outputs**
+- [x] **Step 3: Capture the six golden outputs**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -286,7 +286,7 @@ sh "$GEN" tests/fixtures/records/bypass.tsv "$G/cert.pem"   > "$G/bypass-pem.tom
 Expected: all six files non-empty; each starts with the header comment and
 ends with `change_system_dns = false` and a single trailing newline.
 
-- [ ] **Step 4: Record checksums**
+- [x] **Step 4: Record checksums**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -295,7 +295,7 @@ shasum -a 256 "$G"/*.toml > "$G/checksums.sha256"
 
 Expected: `checksums.sha256` lists all six goldens.
 
-- [ ] **Step 5: Sanity-diff the goldens against the preserved old binary**
+- [x] **Step 5: Sanity-diff the goldens against the preserved old binary**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -313,7 +313,7 @@ Expected: six `OK` — the goldens are reproducible from the old binary.
 sanity diffs are empty. The goldens remain in `/tmp` for the transition and
 are never staged or committed.
 
-### [ ] Task 2: Rewrite `tests/test_gen_config.sh`
+### [x] Task 2: Rewrite `tests/test_gen_config.sh`
 
 New test text (clean-room — no text copied from the inherited test), same
 behavioral facts. Must pass against the **old** implementation, proving it
@@ -323,7 +323,7 @@ captures today's behavior.
 
 - Rewrite: `tests/test_gen_config.sh`
 
-- [ ] **Step 1: Write the rewritten test**
+- [x] **Step 1: Write the rewritten test**
 
 Keep the harness conventions (`#!/bin/sh`; `. "$(dirname "$0")/lib.sh"`;
 repo-root-relative paths; per-test `TT_TEST_TMP` for the temp TSV fixture
@@ -380,7 +380,7 @@ stdin). Assertions to keep (from the contract and the observed behavior):
   1`, and the stderr captured from a direct run contains `gen-config:` and
   `endpoint.hostname is not set`.
 
-- [ ] **Step 2: Run the rewritten test against the OLD implementation**
+- [x] **Step 2: Run the rewritten test against the OLD implementation**
 
 ```sh
 TT_TEST_TMP=$(mktemp -d) sh tests/test_gen_config.sh < /dev/null
@@ -389,7 +389,7 @@ TT_TEST_TMP=$(mktemp -d) sh tests/test_gen_config.sh < /dev/null
 Expected: PASS — summary line reports 0 failed (the repo still holds the
 old `gen-config`, so this run exercises it).
 
-- [ ] **Step 3: Run the whole suite for regression**
+- [x] **Step 3: Run the whole suite for regression**
 
 ```sh
 sh tests/run.sh
@@ -400,7 +400,7 @@ Expected: `== all tests passed`.
 **Verification**: rewritten test green against the old implementation;
 full suite green.
 
-### [ ] Task 3: Implement the new `gen-config` from the contract
+### [x] Task 3: Implement the new `gen-config` from the contract
 
 Clean-room: write from the issue contract, the Research facts, and the
 fixtures. Do **not** open the inherited file's text while writing; the old
@@ -412,7 +412,7 @@ set/order and formatting facts in the issue and in Research.
 
 - Rewrite: `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config`
 
-- [ ] **Step 1: Write the new implementation**
+- [x] **Step 1: Write the new implementation**
 
 Behavior contract to implement (new expression, any structure that satisfies
 it):
@@ -474,7 +474,7 @@ it):
   keys, no extra blank lines;
 - the script must be executable (`100755`).
 
-- [ ] **Step 2: Syntax-check and set the mode**
+- [x] **Step 2: Syntax-check and set the mode**
 
 ```sh
 sh -n packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
@@ -486,14 +486,14 @@ Expected: `sh -n` silent; `stat` shows `755`.
 **Verification**: implementation exists at the same path, is executable,
 syntax-checks clean. (Byte-equivalence and tests are Task 4.)
 
-### [ ] Task 4: Verify — tests, golden diff, lint, exec bit, suite, git state
+### [x] Task 4: Verify — tests, golden diff, lint, exec bit, suite, git state
 
 **Files:**
 
 - Run/check: `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config`,
   `tests/test_gen_config.sh`, `/tmp/tt04-genconfig-goldens/`
 
-- [ ] **Step 1: Run the rewritten test against the NEW implementation**
+- [x] **Step 1: Run the rewritten test against the NEW implementation**
 
 ```sh
 TT_TEST_TMP=$(mktemp -d) sh tests/test_gen_config.sh < /dev/null
@@ -501,7 +501,7 @@ TT_TEST_TMP=$(mktemp -d) sh tests/test_gen_config.sh < /dev/null
 
 Expected: PASS, 0 failed.
 
-- [ ] **Step 2: Golden byte-diff — old vs new, all six cases**
+- [x] **Step 2: Golden byte-diff — old vs new, all six cases**
 
 ```sh
 G=/tmp/tt04-genconfig-goldens
@@ -523,7 +523,7 @@ diff "$G/bypass-pem.toml"  "$G/new/bypass-pem.toml"  && echo "bypass-pem OK"
 Expected: six `OK` — byte-identical on all six cases (acceptance
 criterion: golden byte-diff empty).
 
-- [ ] **Step 3: TOML parse spot-check**
+- [x] **Step 3: TOML parse spot-check**
 
 ```sh
 python3 - <<'EOF'
@@ -543,7 +543,7 @@ EOF
 Expected: all six parse. (On the router: the client's
 `setup_wizard --settings` path is the ultimate oracle.)
 
-- [ ] **Step 4: Lint**
+- [x] **Step 4: Lint**
 
 ```sh
 shellcheck -s sh packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config tests/test_gen_config.sh
@@ -553,7 +553,7 @@ Expected: clean. `shellcheck` is a CI gate; if it is not installed locally,
 run `sh -n` on both files (must be silent) and note that the CI workflow
 covers the real check.
 
-- [ ] **Step 5: Executable bit and full suite**
+- [x] **Step 5: Executable bit and full suite**
 
 ```sh
 sh tests/run.sh
@@ -562,7 +562,7 @@ git ls-files -s packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-c
 
 Expected: `== all tests passed`; mode `100755` for `gen-config`.
 
-- [ ] **Step 6: Git state — no stray files, no goldens committed**
+- [x] **Step 6: Git state — no stray files, no goldens committed**
 
 ```sh
 git status --short
