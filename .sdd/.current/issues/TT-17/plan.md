@@ -1,7 +1,7 @@
 # Implementation Plan: menu manifest
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-17/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -47,13 +47,13 @@ No test files: verification is the CI JSON gate + path/manual checks below.
 
 ## Tasks
 
-### [ ] Task 1: Baseline — record current JSON validity
+### [x] Task 1: Baseline — record current JSON validity
 
 **Files:**
 
 - Inspect: `packages/luci-app-trusttunnel/root/usr/share/luci/menu.d/luci-app-trusttunnel.json`
 
-- [ ] **Step 1: Prove the current file is valid JSON**
+- [x] **Step 1: Prove the current file is valid JSON**
 
 Run:
 ```bash
@@ -62,35 +62,35 @@ python3 -c "import json,sys; json.load(open(sys.argv[1]))" \
 ```
 Expected: exit 0, no output. Also confirm it is the only file in `menu.d/`.
 
-- [ ] **Step 2: Note the baseline contract mapping**
+- [x] **Step 2: Note the baseline contract mapping**
 
 Confirm each entry from the issue's "Contract to reproduce" against the current file (titles, orders, `firstchild` action, acl/uci depends, three view paths). Record that no discrepancies exist.
 
 **Verification**: Baseline is green and matches the contract 1:1; the working tree is clean except `.sdd/`/`docs/`.
 
-### [ ] Task 2: Re-create the manifest from the contract
+### [x] Task 2: Re-create the manifest from the contract
 
 **Files:**
 
 - Write: `packages/luci-app-trusttunnel/root/usr/share/luci/menu.d/luci-app-trusttunnel.json`
 
-- [ ] **Step 1: Write the file from the contract only**
+- [x] **Step 1: Write the file from the contract only**
 
 Compose the JSON from the issue's contract section (parent + three children as specified), using the LuCI `menu.d` key/value structure above. Do not copy the old file's text; the content is dictated by the contract.
 
-- [ ] **Step 2: Validate JSON and inspect the diff**
+- [x] **Step 2: Validate JSON and inspect the diff**
 
 Run the Task 1 JSON check again, then `git diff -- packages/luci-app-trusttunnel/root/usr/share/luci/menu.d/` — the diff must be content-identical to the baseline file (contract), with no stray files (`*.old`, backups) left behind.
 
 **Verification**: File parses; `git status` shows the re-created file only, no old copy kept alongside (PRD implementation decision).
 
-### [ ] Task 3: Verify — gate, view paths, manual menu check
+### [x] Task 3: Verify — gate, view paths, manual menu check
 
 **Files:**
 
 - Test: all `packages/**/*.json` (CI gate), the three view JS files, the ACL file
 
-- [ ] **Step 1: Run the exact CI JSON gate**
+- [x] **Step 1: Run the exact CI JSON gate**
 
 Run:
 ```bash
@@ -100,13 +100,20 @@ done
 ```
 Expected: exit 0 — mirrors `.github/workflows/ci.yml` "JSON syntax" step.
 
-- [ ] **Step 2: Assert view paths resolve to real files**
+- [x] **Step 2: Assert view paths resolve to real files**
 
 For each view `trusttunnel/{status,settings,diagnostics}` assert `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/<name>.js` exists (the TT-10/11/12 outputs), and assert the `depends.acl` name `luci-app-trusttunnel` exists in `root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json`.
 
 - [ ] **Step 3: Manual LuCI menu check on a device**
 
 With the package installed: Services → TrustTunnel shows the three pages in order Status, Settings, Diagnostics (orders 10/20/30); the parent renders as a section via `firstchild`; the subtree is hidden when the ACL is missing or `trusttunnel` UCI config is absent.
+
+> Deferred: requires a device with LuCI installed; none available in this environment.
+> Executed instead: structural assertion of the manifest against the contract — 4/4 entries
+> (paths, titles, orders, action types/views, acl/uci depends) match exactly, no extra or
+> missing keys; all three view paths resolve to existing JS files; depends targets exist
+> (ACL `luci-app-trusttunnel` in `rpcd/acl.d/luci-app-trusttunnel.json`, UCI config
+> `trusttunnel` shipped in `root/etc/config/trusttunnel`).
 
 **Verification**: JSON gate green, all three view files resolve, manual menu tree matches the contract; `git status` clean of leftovers.
 

@@ -1,7 +1,7 @@
 # Implementation Plan: ACL manifest
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-16/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -80,19 +80,19 @@ issue's "Contract to reproduce" section).
 
 ## Tasks
 
-### [ ] Task 1: Baseline — JSON validity + method cross-check vs TT-09
+### [x] Task 1: Baseline — JSON validity + method cross-check vs TT-09
 
 **Files:**
 
 - Read: `packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json`
 
-- [ ] **Step 1: Run the CI JSON gate on the current file**
+- [x] **Step 1: Run the CI JSON gate on the current file**
 
 ```bash
 python3 -c "import json,sys; json.load(open(sys.argv[1]))" packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json
 ```
 
-- [ ] **Step 2: Cross-check the method names against TT-09's exports**
+- [x] **Step 2: Cross-check the method names against TT-09's exports**
 
 ```bash
 python3 - <<'EOF'
@@ -111,7 +111,7 @@ print('ACL baseline OK')
 EOF
 ```
 
-- [ ] **Step 3: Record the result**
+- [x] **Step 3: Record the result**
 
 Expected: PASS on both commands — the inherited file already satisfies the
 contract. If PASS, the baseline is established; if FAIL, stop and report the
@@ -120,13 +120,13 @@ discrepancy (the file drifted from the contract).
 **Verification**: both commands above exit 0; the printed cross-check matches
 TT-09's 9 exports exactly (read 7 + write 2, no duplicates, no extras).
 
-### [ ] Task 2: Re-create the ACL manifest from the contract
+### [x] Task 2: Re-create the ACL manifest from the contract
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json`
 
-- [ ] **Step 1: Write the file from the TT-16 contract (not from the inherited text)**
+- [x] **Step 1: Write the file from the TT-16 contract (not from the inherited text)**
 
 ```json
 {
@@ -153,11 +153,11 @@ TT-09's 9 exports exactly (read 7 + write 2, no duplicates, no extras).
 The structure is dictated by the rpcd ACL schema; the content is the issue's
 contract (read/write split preserved, tab indentation).
 
-- [ ] **Step 2: Validate the rewritten file**
+- [x] **Step 2: Validate the rewritten file**
 
 Run: `python3 -m json.tool packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json > /dev/null` Expected: exit 0, no output
 
-- [ ] **Step 3: Check the diff**
+- [x] **Step 3: Check the diff**
 
 Run: `git diff --stat packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json` Expected: the file is the only change; no `*.old` files exist (`ls packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/`)
 
@@ -165,13 +165,13 @@ Run: `git diff --stat packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/lu
 (read/write split preserved, 7 + 2 method names, `uci [trusttunnel]` in both
 groups); `git status` shows only this file changed.
 
-### [ ] Task 3: Verify — JSON gate, TT-09 export match, device session access
+### [x] Task 3: Verify — JSON gate, TT-09 export match, device session access
 
 **Files:**
 
 - Test: `packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json`
 
-- [ ] **Step 1: Run the exact CI JSON gate**
+- [x] **Step 1: Run the exact CI JSON gate**
 
 ```bash
 for f in $(find packages -name '*.json'); do python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"; done
@@ -179,13 +179,18 @@ for f in $(find packages -name '*.json'); do python3 -c "import json,sys; json.l
 
 Expected: exit 0 (all JSON files in `packages/` parse)
 
-- [ ] **Step 2: Re-run the method cross-check against TT-09 exports**
+- [x] **Step 2: Re-run the method cross-check against TT-09 exports**
 
 Run the same `python3 - <<'EOF' ... EOF` assertion script from Task 1.
 Expected: `ACL baseline OK` — every one of TT-09's 9 exports is present
 exactly once, in the correct read/write group.
 
 - [ ] **Step 3: Device session-access check (manual, on a device/rootfs)**
+
+> NOT EXECUTED in this environment (no device/rootfs available; macOS host).
+> Deferred to the on-device verification pass. Static equivalent verified:
+> read = 7 methods + uci [trusttunnel], write = 2 methods + uci [trusttunnel]
+> exactly per the contract.
 
 ```bash
 ubus call session access '{"scope":"luci.trusttunnel"}'
@@ -196,7 +201,7 @@ Expected: for a read-only LuCI user the granted ubus methods are exactly
 `trusttunnel`; for a write-capable user `service` and `import_config` are
 granted too.
 
-- [ ] **Step 4: Tree-cleanliness check**
+- [x] **Step 4: Tree-cleanliness check**
 
 Run: `git status --porcelain` Expected: only
 `packages/luci-app-trusttunnel/root/usr/share/rpcd/acl.d/luci-app-trusttunnel.json`

@@ -1,6 +1,6 @@
 # Issue TT-16: ACL manifest
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-09
 - **Effort**: S

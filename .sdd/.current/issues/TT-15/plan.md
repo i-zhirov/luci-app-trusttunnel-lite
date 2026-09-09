@@ -1,7 +1,7 @@
 # Implementation Plan: default UCI config
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-15/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -88,13 +88,13 @@ N/A — no API endpoints. Cross-check contracts: TT-03 export key set and TT-11 
 
 ## Tasks
 
-### [ ] Task 1: Baseline — diff the current file against the contract
+### [x] Task 1: Baseline — diff the current file against the contract
 
 **Files:**
 
 - None (read-only inspection; scratch outputs in `/tmp`)
 
-- [ ] **Step 1: Record the tracked mode**
+- [x] **Step 1: Record the tracked mode**
 
 ```sh
 git ls-files -s packages/luci-app-trusttunnel/root/etc/config/trusttunnel
@@ -102,7 +102,7 @@ git ls-files -s packages/luci-app-trusttunnel/root/etc/config/trusttunnel
 
 Expected: `100644 <hash> 0 ...` — data file, not executable (the CI executable gate does not list it).
 
-- [ ] **Step 2: Extract the current option set**
+- [x] **Step 2: Extract the current option set**
 
 ```sh
 awk -F"'" '/^config /{split($1,a," "); print "config " a[2]} /^\toption /{split($1,a," "); print "option " a[2]}' packages/luci-app-trusttunnel/root/etc/config/trusttunnel > /tmp/tt15-current-keys.txt
@@ -110,7 +110,7 @@ awk -F"'" '/^config /{split($1,a," "); print "config " a[2]} /^\toption /{split(
 
 The extractor matches only `config`/`option` lines, so the comment block is ignored, and the anonymous section prints as `config routing_profile`.
 
-- [ ] **Step 3: Diff against the contract key list**
+- [x] **Step 3: Diff against the contract key list**
 
 ```sh
 cat > /tmp/tt15-contract-keys.txt <<'EOF'
@@ -149,13 +149,13 @@ Expected: no output — the current file's option set equals the contract (5 sec
 
 **Verification**: the diff is empty; `/tmp/tt15-current-keys.txt` contains 5 `config` lines and 22 `option` lines.
 
-### [ ] Task 2: Re-create the file from the contract
+### [x] Task 2: Re-create the file from the contract
 
 **Files:**
 
 - Rewrite: `packages/luci-app-trusttunnel/root/etc/config/trusttunnel`
 
-- [ ] **Step 1: Write the file composed from the Entities table (the contract), not from the old file**
+- [x] **Step 1: Write the file composed from the Entities table (the contract), not from the old file**
 
 Compose the UCI text from the section/option table above using the format conventions: `config <type> '<name>'`, `option <key> '<value>'` with one TAB indent, single quotes, blank line between sections, no comments, trailing newline. The resulting file must be exactly:
 
@@ -195,7 +195,7 @@ config domains 'domains'
 
 **Comment decision (pinned):** the current file carries a 5-line comment block above `config routing_profile`; comments are not part of the schema contract and cannot be transcribed clean-room, so the re-created file deliberately carries NO comments. The equivalence diff (Task 3 Step 1) strips `#` lines, so the oracle comparison stays valid.
 
-- [ ] **Step 2: Sanity-check the file**
+- [x] **Step 2: Sanity-check the file**
 
 ```sh
 wc -l packages/luci-app-trusttunnel/root/etc/config/trusttunnel
@@ -207,13 +207,13 @@ Expected: `31` lines for the re-created file (22 options + 5 section headers + 4
 
 **Verification**: 31 lines, TAB indentation, no comments, mode 100644, git status shows only this file modified (plus the plan file).
 
-### [ ] Task 3: Verify — option-set diff vs current (identical) + consistency vs TT-03 and TT-11
+### [x] Task 3: Verify — option-set diff vs current (identical) + consistency vs TT-03 and TT-11
 
 **Files:**
 
 - None (diff checks; scratch outputs in `/tmp`)
 
-- [ ] **Step 1: Full-content equivalence against the old file (oracle), comment-normalized**
+- [x] **Step 1: Full-content equivalence against the old file (oracle), comment-normalized**
 
 ```sh
 git show HEAD:packages/luci-app-trusttunnel/root/etc/config/trusttunnel | sed -E "s/^[[:space:]]+//; /^#/d; s/'//g; /^$/d" > /tmp/tt15-old.txt
@@ -225,7 +225,7 @@ diff -u /tmp/tt15-old.txt /tmp/tt15-new.txt
 
 Expected: empty — content identical after normalization (only cosmetic whitespace/quote differences would be allowed; here none, and the comment block is stripped on both sides).
 
-- [ ] **Step 2: Option-set diff vs current**
+- [x] **Step 2: Option-set diff vs current**
 
 ```sh
 awk -F"'" '/^config /{split($1,a," "); print "config " a[2]} /^\toption /{split($1,a," "); print "option " a[2]}' packages/luci-app-trusttunnel/root/etc/config/trusttunnel > /tmp/tt15-new-keys.txt
@@ -234,25 +234,25 @@ diff -u /tmp/tt15-current-keys.txt /tmp/tt15-new-keys.txt
 
 Expected: empty — option set identical to the current file (5 sections, 22 options).
 
-- [ ] **Step 3: Consistency vs TT-03 export schema (26-key set)**
+- [x] **Step 3: Consistency vs TT-03 export schema (26-key set)**
 
 The TT-03 export key set (schema-keys marker at uci-export line 55 plus the explicit loops) is: `main.enabled`, `main.log_level`; `endpoint.hostname/username/password/protocol/anti_dpi/post_quantum/skip_verification/has_ipv6/custom_sni/client_random/routing_profile`; list keys `endpoint.address`, `endpoint.dns_upstream`; `network.mtu/table/fwmark/blackhole_on_down/include_router_traffic/lan_devices`; `domains.direct`; and the resolved profile keys `routing_profile.name/mode/vpn_rules/bypass_rules`. Every scalar exists in the file; the only file option absent from the export schema is `endpoint.certificate` (deliberate per TT-03); all five list keys are empty lists on defaults, so `uci-export` emits zero list lines; the profile resolution picks the anonymous `routing_profile` section via `endpoint.routing_profile 'Default'` and emits `routing_profile.name` and `routing_profile.mode`.
 
 Expected: check passes — `uci-export` output on these defaults contains 15 records in TT-03 order (main 2 + endpoint 6 non-empty scalars + routing_profile.name/mode 2 + network 5; the empty-valued scalars — hostname, username, password, custom_sni, client_random, lan_devices — are skipped by the `[ -n ]` guard, and the address/dns_upstream/direct lists are empty).
 
-- [ ] **Step 4: Consistency vs TT-11 field list**
+- [x] **Step 4: Consistency vs TT-11 field list**
 
 The 26 UI-edited fields (`enabled`, `log_level`; `address`, `hostname`, `username`, `password`, `protocol`, `anti_dpi`, `post_quantum`, `custom_sni`, `client_random`, `routing_profile`, `has_ipv6`, `skip_verification`, `certificate`, `dns_upstream`; `name`, `mode`, `vpn_rules`, `bypass_rules`; `mtu`, `lan_devices`, `blackhole_on_down`, `include_router_traffic`, `fwmark`, `table`) each map to a file section/option, and every file option (22) is edited by the UI. The UI's list fields (`address`, `dns_upstream`, `vpn_rules`, `bypass_rules`) are empty defaults; `domains.direct` is the legacy fallback and is not shown in the UI (settings.js comment).
 
 Expected: check passes — sets are identical (every file option has a UI field, and every UI field maps to a file option).
 
-- [ ] **Step 5: Rootfs acceptance (fresh-install `uci export`)**
+- [x] **Step 5: Rootfs acceptance (fresh-install `uci export`)**
 
 `uci export trusttunnel` on a fresh install must print the five sections in file order with the same options. This runs in the CI rootfs install gate (opkg/apk; the install flow is TT-14's scope). Locally macOS has no `uci`, so the normalized-content diff (Step 1) plus option-set diff (Step 2) is the local proxy; the CI rootfs gate is the final check.
 
 Expected: CI rootfs gate green after the rewrite; local proxy diffs empty.
 
-- [ ] **Step 6: Clean-room hygiene**
+- [x] **Step 6: Clean-room hygiene**
 
 ```sh
 git status --short
