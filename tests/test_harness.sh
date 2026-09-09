@@ -1,20 +1,27 @@
 #!/bin/sh
-# Check the harness itself: asserts must both pass and fail when they should.
+# Self-test of the assertion helpers: proves they accept both a passing
+# and a failing check, and that a failure inside a subshell is recorded
+# in the counter files. Exits non-zero whenever the harness misbehaves.
+
 . "$(dirname "$0")/lib.sh"
 
-assert_eq "abc" "abc" "assert_eq accepts equal strings"
-assert_contains "hello world" "lo wo" "assert_contains finds substring"
-assert_exit 0 "assert_exit accepts success" true
-assert_exit 1 "assert_exit accepts failure" false
+# The positive path: each helper accepts its expected outcome.
+assert_eq "abc" "abc" "equal strings compare equal"
+assert_contains "hello world" "lo wo" "a substring is found inside the haystack"
+assert_exit 0 "a successful command is accepted" true
+assert_exit 1 "a failing command is accepted" false
 
-# Negative check: an assert must record a failure.
+# The negative path: an intentionally failing assertion runs inside a
+# subshell with its output hidden. The failed counter must show exactly
+# one recorded failure, proving the helpers are not silently swallowing
+# failures; the counter is then reset so the summary stays clean.
 ( assert_eq "a" "b" "intentional failure" ) >/dev/null 2>&1
-if [ "$(cat "$TT_TEST_TMP/failed")" = "1" ]; then
-	echo "  ok: assert_eq records failures"
-	echo 0 > "$TT_TEST_TMP/failed"
+if [ "$(cat "$TT_TEST_TMP/failed")" -eq 1 ]; then
+    echo "  ok: a failing check is recorded in the counters"
+    printf '0\n' > "$TT_TEST_TMP/failed"
 else
-	echo "  FAIL: assert_eq did not record a failure"
-	exit 1
+    echo "  FAIL: assert_eq did not record a failure"
+    exit 1
 fi
 
 tt_test_summary

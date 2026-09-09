@@ -293,19 +293,19 @@ files) are created and deleted within their task; none survive the issue.
 
 ## Tasks
 
-### [ ] Task 1: Capture the current baseline
+### [x] Task 1: Capture the current baseline
 
 **Files:**
 
 - Read-only: `tests/run.sh`, `tests/lib.sh`, `tests/test_harness.sh`, `tests/fixtures/records/*.tsv`, all `tests/test_*.sh`
 
-- [ ] **Step 1: Run the current suite and record the result**
+- [x] **Step 1: Run the current suite and record the result**
 
 Run: `sh tests/run.sh > /tmp/tt-baseline.txt 2>&1; echo "exit=$?"`
 
 Expected: `exit=0`, last line of the capture is `== all tests passed`.
 
-- [ ] **Step 2: Record per-test results and stdout shapes**
+- [x] **Step 2: Record per-test results and stdout shapes**
 
 From the capture, note the 7 test banners (`== tests/test_*.sh`), each
 test's final `  N assertions, M failed` line, and the total (180 assertions,
@@ -315,7 +315,7 @@ test_routing 40). Also note the output shapes: ok lines start with
 `  ok:`, failures start with `  FAIL:`, and the runner banner precedes
 each test.
 
-- [ ] **Step 3: Confirm the standalone path works**
+- [x] **Step 3: Confirm the standalone path works**
 
 Run: `sh tests/test_records.sh; echo "exit=$?"`
 
@@ -325,7 +325,7 @@ its own temp dir when `TT_TEST_TMP` is unset — this must keep working).
 **Verification**: `/tmp/tt-baseline.txt` exists and shows the 7 tests green.
 The baseline is the comparison target for every later task.
 
-### [ ] Task 2: Re-express `tests/lib.sh`
+### [x] Task 2: Re-express `tests/lib.sh`
 
 **Files:**
 
@@ -333,7 +333,7 @@ The baseline is the comparison target for every later task.
   match `tests/test_*.sh`, so the runner never picks it up; deleted in Step 5)
 - Rewrite: `tests/lib.sh`
 
-- [ ] **Step 1: Write the behavioral probe first (new test text)**
+- [x] **Step 1: Write the behavioral probe first (new test text)**
 
 Write `tests/zz_probe_lib.sh` from the contract (do not copy the inherited
 file; express the checks in your own words). It must source `lib.sh` the
@@ -358,14 +358,14 @@ non-zero on any failed check:
 7. with `TT_TEST_TMP` unset, sourcing `lib.sh` creates and exports its own
    temp dir (run this check in a fresh shell: `env -u TT_TEST_TMP sh -c '. ./tests/lib.sh; ...'`).
 
-- [ ] **Step 2: Run the probe against the current (inherited) lib.sh**
+- [x] **Step 2: Run the probe against the current (inherited) lib.sh**
 
 Run: `sh tests/zz_probe_lib.sh; echo "exit=$?"`
 
 Expected: `exit=0`, all probe checks ok. This proves the probe encodes the
 real contract of today's `lib.sh`.
 
-- [ ] **Step 3: Rewrite `tests/lib.sh` with new expression**
+- [x] **Step 3: Rewrite `tests/lib.sh` with new expression**
 
 Replace the file content with your own expression implementing the pinned
 contract: `TT_TEST_TMP` default via `mktemp -d` when unset; `total`/`failed`
@@ -375,7 +375,7 @@ updated via file read-modify-write so subshell increments survive; `set -u`
 - and POSIX-safe. Keep the file at `tests/lib.sh` and the sourcing pattern —
 the seven suite tests source it unchanged.
 
-- [ ] **Step 4: Verify — probe, then the whole suite**
+- [x] **Step 4: Verify — probe, then the whole suite**
 
 Run: `sh tests/zz_probe_lib.sh; echo "exit=$?"`
 
@@ -388,7 +388,7 @@ lines as `/tmp/tt-baseline.txt` (diff the two files: only file paths may
 differ if a test's output text changed — none should, since the test files
 are untouched).
 
-- [ ] **Step 5: Negative control — prove the probe can fail**
+- [x] **Step 5: Negative control — prove the probe can fail**
 
 Temporarily sabotage the new `lib.sh` (e.g. make `assert_eq` always print a
 FAIL line). Run `sh tests/zz_probe_lib.sh` — expected: non-zero exit, probe
@@ -399,14 +399,14 @@ expected: `exit=0`. Then delete `tests/zz_probe_lib.sh`.
 counts to baseline; probe (now deleted) demonstrated red under sabotage;
 `git diff tests/lib.sh` shows new expression, no verbatim inherited text.
 
-### [ ] Task 3: Re-express `tests/run.sh`
+### [x] Task 3: Re-express `tests/run.sh`
 
 **Files:**
 
 - Create (scratch, deleted in Step 4): `tests/test_zz_probe_pass.sh`, `tests/test_zz_probe_fail.sh`
 - Rewrite: `tests/run.sh`
 
-- [ ] **Step 1: Write the runner probes first**
+- [x] **Step 1: Write the runner probes first**
 
 `tests/test_zz_probe_pass.sh` (must match the `tests/test_*.sh` glob to be
 picked up): write, in new expression, checks that `TT_TEST_TMP` is set and
@@ -417,7 +417,7 @@ non-zero immediately — nothing may block), and that the test's own file in
 per test); print ok lines; exit 0. `tests/test_zz_probe_fail.sh`: prints a
 distinct marker line and exits 1.
 
-- [ ] **Step 2: Run the probes against the current runner**
+- [x] **Step 2: Run the probes against the current runner**
 
 Run: `sh tests/run.sh; echo "exit=$?"`
 
@@ -425,7 +425,7 @@ Expected: `exit=1`, banner `== FAILURES`, both probe tests listed with their
 own `== ` banners, the failing probe's marker visible. This documents the
 failure path of the current runner and proves the probes are picked up.
 
-- [ ] **Step 3: Rewrite `tests/run.sh` with new expression**
+- [x] **Step 3: Rewrite `tests/run.sh` with new expression**
 
 Replace the file content with your own expression implementing the pinned
 contract: `cd` to repo root; `set -u`; iterate `tests/test_*.sh`; print
@@ -434,7 +434,7 @@ test; run `sh <test> < /dev/null`; remove the temp dir after each test
 (even on failure); continue the loop after failures; final banner
 `== all tests passed` (exit 0) or `== FAILURES` (exit 1).
 
-- [ ] **Step 4: Verify the failure path, then the clean path**
+- [x] **Step 4: Verify the failure path, then the clean path**
 
 Run: `sh tests/run.sh; echo "exit=$?"` — Expected: `exit=1`, `== FAILURES`,
 both probes listed, failing probe reported (proves the NEW runner reports
@@ -451,13 +451,13 @@ deliberate-failure probe proved the failure path (acceptance criterion 1
 and issue verification step 3). `git diff tests/run.sh` shows new
 expression.
 
-### [ ] Task 4: Re-express `tests/test_harness.sh`
+### [x] Task 4: Re-express `tests/test_harness.sh`
 
 **Files:**
 
 - Rewrite: `tests/test_harness.sh`
 
-- [ ] **Step 1: Write the new self-test from the contract**
+- [x] **Step 1: Write the new self-test from the contract**
 
 Replace the file content with your own expression: source `lib.sh`; run four
 positive assertions — an `assert_eq` on equal strings, an `assert_contains`
@@ -469,14 +469,14 @@ an ok line for the check, and reset the counter file to 0; end with
 `tt_test_summary`. The self-test must exit 0 only when the harness behaves.
 Do not copy the inherited file's text.
 
-- [ ] **Step 2: Run it alone**
+- [x] **Step 2: Run it alone**
 
 Run: `sh tests/test_harness.sh; echo "exit=$?"`
 
 Expected: `exit=0`, exactly `  5 assertions, 0 failed` (4 positive + 1
 negative-check ok line — identical to the baseline).
 
-- [ ] **Step 3: Negative control — the self-test must catch a broken harness**
+- [x] **Step 3: Negative control — the self-test must catch a broken harness**
 
 Temporarily make one positive assertion fail (e.g. compare unequal strings).
 Run: `sh tests/test_harness.sh; echo "exit=$?"` — Expected: `exit=1` and at
@@ -487,7 +487,7 @@ Do NOT pin a summary line here: with a sabotaged positive assertion the
 else branch exits 1 before `tt_test_summary` prints. Restore the correct
 assertion and re-run — Expected: `exit=0`, `  5 assertions, 0 failed`.
 
-- [ ] **Step 4: Full-suite check**
+- [x] **Step 4: Full-suite check**
 
 Run: `sh tests/run.sh; echo "exit=$?"` — Expected: `exit=0`, harness test
 still reports `  5 assertions, 0 failed`.
@@ -497,13 +497,13 @@ and its summary line matches the baseline; the sabotage run proved it exits
 non-zero when the harness misbehaves (acceptance criterion 3).
 `git diff tests/test_harness.sh` shows new expression.
 
-### [ ] Task 5: Re-create the record fixtures with identical data
+### [x] Task 5: Re-create the record fixtures with identical data
 
 **Files:**
 
 - Rewrite: `tests/fixtures/records/minimal.tsv`, `tests/fixtures/records/full.tsv`, `tests/fixtures/records/bypass.tsv`
 
-- [ ] **Step 1: Write the fixtures from the data contract**
+- [x] **Step 1: Write the fixtures from the data contract**
 
 Replace all three files with rows written from the Entities tables above (6,
 31 and 14 rows): `section.option<TAB>value`, exact keys and values, repeated
@@ -513,7 +513,7 @@ reproduced byte-for-byte (value `pa"ss\with`, then a LITERAL tab, then
 `specials`). Mind the tabs: write the separator with a real tab character,
 not spaces.
 
-- [ ] **Step 2: Verify with the existing unit tests (red first, then green)**
+- [x] **Step 2: Verify with the existing unit tests (red first, then green)**
 
 Run: `sh tests/test_records.sh; echo "exit=$?"` — Expected: `exit=0`, all 12
 assertions pass (this test reads `minimal.tsv` + `full.tsv` and asserts the
@@ -531,7 +531,7 @@ If a fixture row is wrong, the corresponding assertion fails — that failure
 is the red signal; fix the row from the data contract and re-run until
 green.
 
-- [ ] **Step 3: Verify structural facts**
+- [x] **Step 3: Verify structural facts**
 
 Run: `wc -l tests/fixtures/records/minimal.tsv tests/fixtures/records/full.tsv tests/fixtures/records/bypass.tsv`
 — Expected: `6`, `31`, `14` (one line per row, comments included).
@@ -554,13 +554,13 @@ may differ, nothing else (incl. the comment text).
 tests that assert it; `test_records.sh` and `test_gen_config.sh` together
 cover all three fixtures).
 
-### [ ] Task 6: Final suite verification and clean-tree check
+### [x] Task 6: Final suite verification and clean-tree check
 
 **Files:**
 
 - Read-only: all rewritten files; scratch `tests/test_zz_scratch.sh` (created and deleted inside this task)
 
-- [ ] **Step 1: Full suite vs baseline**
+- [x] **Step 1: Full suite vs baseline**
 
 Run: `sh tests/run.sh > /tmp/tt-final.txt 2>&1; echo "exit=$?"`
 
@@ -568,19 +568,19 @@ Expected: `exit=0`, `== all tests passed`. Diff the per-test banner list and
 every `  N assertions, M failed` line against `/tmp/tt-baseline.txt`:
 identical tests, identical counts (180 assertions total).
 
-- [ ] **Step 2: Deliberate-failure check (acceptance criterion 1)**
+- [x] **Step 2: Deliberate-failure check (acceptance criterion 1)**
 
 Create `tests/test_zz_scratch.sh` that prints a marker and exits 1. Run:
 `sh tests/run.sh; echo "exit=$?"` — Expected: `exit=1`, banner
 `== FAILURES`, the scratch test listed with its `== ` banner and marker.
 Delete `tests/test_zz_scratch.sh`, re-run — Expected: `exit=0`.
 
-- [ ] **Step 3: Standalone self-test (acceptance criterion 3)**
+- [x] **Step 3: Standalone self-test (acceptance criterion 3)**
 
 Run: `sh tests/test_harness.sh; echo "exit=$?"` — Expected: `exit=0`,
 `  5 assertions, 0 failed`.
 
-- [ ] **Step 4: Clean-tree and clean-room check**
+- [x] **Step 4: Clean-tree and clean-room check**
 
 Run: `git status --porcelain` — Expected: only the six planned files show
 as modified, plus `.sdd/.current/` plan/issue files; NO `*.old` files, NO
