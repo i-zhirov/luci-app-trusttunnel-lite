@@ -1,8 +1,8 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: Apache-2.0
 #
 # luci-app-trusttunnel: LuCI support for the TrustTunnel full-tunnel client.
-# Build metadata re-expressed from the package build contract; the license
-# line is unchanged until the license flip.
+# Independent reimplementation (Apache-2.0); the upstream package was only
+# the starting point of the design, see the Acknowledgements in README.md.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-trusttunnel
@@ -21,7 +21,7 @@ PKG_NAME:=luci-app-trusttunnel
 # release.yml fails a tag build whose artifact does not carry the tag.
 PKG_VERSION:=$(strip $(shell v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] && printf '%s' "$$v" || printf '%s' 1.0.13))
 PKG_RELEASE:=1
-PKG_LICENSE:=GPL-2.0-only
+PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 
 LUCI_TITLE:=LuCI support for TrustTunnel (full tunnel)

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-License-Identifier: Apache-2.0
 include $(TOPDIR)/rules.mk
 
 # Prebuilt TrustTunnel client binaries, packaged per architecture.

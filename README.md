@@ -1,13 +1,15 @@
 # trusttunnel-openwrt
 
-TrustTunnel client daemon for OpenWrt routers. The package is built as a
-lightweight fork of `luci-app-trusttunnel` (GPL-2.0) whose upstream is
-[`NooBiToo/TrustTunnelOpenWrt`](https://github.com/NooBiToo/TrustTunnelOpenWrt);
-it targets OpenWrt **22.03 and newer**, runs the tunnel, exposes a LuCI
-control page and delivers the tunnel to the LAN.
+TrustTunnel client daemon for OpenWrt routers. The package is an
+independent implementation (Apache-2.0) of the same idea as
+[`luci-app-trusttunnel`](https://github.com/NooBiToo/TrustTunnelOpenWrt),
+whose GPL-2.0 code was fully reimplemented in this repository (see the
+Acknowledgements for the history); it targets OpenWrt **22.03 and newer**,
+runs the tunnel, exposes a LuCI control page and delivers the tunnel to
+the LAN.
 
 The original project's community-maintained domain lists are gone. Instead,
-the fork is built around **named routing profiles**:
+the package is built around **named routing profiles**:
 
 - Each profile carries a **mode** and two rule lists.
 - **VPN mode** sends everything through the tunnel except the entries in the
@@ -25,7 +27,7 @@ the fork is built around **named routing profiles**:
 Nothing downloads lists, no cron job is installed, `dnsmasq-full` is not
 required, and no list-DNS options exist.
 
-**Everything on the router that this fork touches:**
+**Everything on the router that this package touches:**
 
 - `luci-app-trusttunnel` plus the optional `luci-i18n-trusttunnel-ru` language
   package;
@@ -36,7 +38,7 @@ required, and no list-DNS options exist.
 - the routing chain fwmark → table `880` → the client's tun device, backed by
   a blackhole killswitch.
 
-**Everything on the router that this fork does NOT touch:** dnsmasq, its
+**Everything on the router that this package does NOT touch:** dnsmasq, its
 config and cache, `https-dns-proxy`, cron, and nothing else on the router is
 affected.
 
@@ -237,7 +239,7 @@ uci commit firewall
 
 ## Differences from the original package
 
-| Aspect | Original luci-app-trusttunnel | This fork |
+| Aspect | Original luci-app-trusttunnel | This package |
 | --- | --- | --- |
 | Mode | Full, or selective driven by a list, chosen globally | Routing profiles with vpn/bypass modes, assigned per server and enforced by the client |
 | Domain lists | Community lists (itdoginfo, allow-domains) with downloads | None — the rules live in the routing profiles |
@@ -290,8 +292,15 @@ the seed step moves those values into the bypass rules of the profile named
 ## Acknowledgements
 
 - [`NooBiToo/TrustTunnelOpenWrt`](https://github.com/NooBiToo/TrustTunnelOpenWrt)
-  — the upstream LuCI package this fork started from (GPL-2.0)
+  — the upstream LuCI package whose GPL-2.0 code was reimplemented here (its design, not its code, survives)
 - [`TrustTunnel/TrustTunnel`](https://github.com/TrustTunnel/TrustTunnel)
   — the server component (Apache-2.0)
 - [`TrustTunnel/TrustTunnelClient`](https://github.com/TrustTunnel/TrustTunnelClient)
   — the client binary (Apache-2.0)
+
+## License
+
+Apache-2.0 (see `LICENSE`). The package is an independent reimplementation:
+it shares the design of the GPL-2.0 `luci-app-trusttunnel` package but
+contains no code from it; the GPL-2.0 text survives only in this
+repository's git history.
