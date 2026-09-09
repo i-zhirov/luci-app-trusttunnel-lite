@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09 (revision per plan-review attempt 1)
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-09/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -163,21 +163,21 @@ Clean-room rule for all tasks: implement from the contract in `issue.md` (and th
 
 - Create: `tests/backend/Dockerfile`, `tests/backend/ucode-check.sh`, `tests/backend/harness.uc`, `tests/backend/stubs/*`, `tests/backend/rootfs/*`, `tests/backend/scenarios/*/setup.sh`, `tests/test_backend_contract.sh`
 
-- [ ] **Step 1: Dockerized ucode gate on the current file**
+- [x] **Step 1: Dockerized ucode gate on the current file**
 
 Write `tests/backend/Dockerfile`: `FROM debian:bookworm`; `apt-get update -qq && apt-get install -y -qq build-essential cmake libjson-c-dev pkg-config git`; `git clone --depth 1 -b v0.0.20250529 https://github.com/jow-/ucode /opt/ucode/src`; `cmake -S /opt/ucode/src -B /opt/ucode/build -DCMAKE_BUILD_TYPE=Release -DFS_SUPPORT=ON -DMATH_SUPPORT=ON -DUBUS_SUPPORT=OFF -DUCI_SUPPORT=OFF -DRTNL_SUPPORT=OFF -DNL80211_SUPPORT=OFF -DRESOLV_SUPPORT=OFF -DLOG_SUPPORT=OFF -DDEBUG_SUPPORT=OFF`; `cmake --build /opt/ucode/build -j"$(nproc)"` — the exact ci.yml build, baked into the image. Build the image once: `docker build -t tt-ucode-gate tests/backend/` — the apt layer and the ucode build are cached in the image (docker layer cache), so no later gate run re-runs apt-get or the build; only the first build takes minutes and needs the network. Write `tests/backend/ucode-check.sh`: `docker run --rm -v "$PWD:/src" -w /src tt-ucode-gate /opt/ucode/build/ucode -L "/opt/ucode/build/*.so" -c <file>`.
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0, `ucode syntax ok`.
 
-- [ ] **Step 2: Negative control**
+- [x] **Step 2: Negative control**
 
 Run: `printf 'let x = ;\n' > /tmp/broken.uc && tests/backend/ucode-check.sh -c /tmp/broken.uc` — Expected: non-zero exit (the gate proves something).
 
-- [ ] **Step 3: Loading spike**
+- [x] **Step 3: Loading spike**
 
 With the built image, copy the backend to a sandbox as `trusttunnel.uc`, and run `docker run --rm -v "$PWD:/src" -w /src tt-ucode-gate /opt/ucode/build/ucode -L "/opt/ucode/build/*.so" -e 'let m = require("./trusttunnel"); print(typeof m, Object.keys(m), "\n");'` from the sandbox. Expected: `object [ "luci.trusttunnel" ]` (module value = top-level return, same mechanism rpcd uses). If require does not capture it, implement the documented fallback in `test_backend_contract.sh`: sandbox copy via `sed '/^return {/,$d'` + append `export { sh, sh_out, shq, tmp_path, write_secret_tmp, vercmp, uciget, records, first, routing_status, parse_ping, endpoint_host };` and load with `require("./trusttunnel")` (module exports object with those functions) — record which path works in a comment at the top of `test_backend_contract.sh`.
 
-- [ ] **Step 4: Harness + scenarios + capture goldens from the CURRENT file**
+- [x] **Step 4: Harness + scenarios + capture goldens from the CURRENT file**
 
 Write `harness.uc` (modes: `--method <name> --args '<json>'` → `%J` of `obj[name].call({args: JSON.parse(...)})`; `--helpers` → unit probe; normalize `checked_at` to 0), the PATH stubs (`tests/backend/stubs/`, mounted read-only at `/opt/stubs` and prepended to `PATH`), and the rootfs stub injection: `tests/backend/rootfs/` is bind-mounted read-only at `/rootfs-stubs`; the `-x` launch in `ucode-check.sh` runs `install -d /etc/init.d /usr/libexec/trusttunnel /opt/trusttunnel_client && install -m 0755 /rootfs-stubs/init.d-trusttunnel /etc/init.d/trusttunnel && install -m 0755 /rootfs-stubs/routing /usr/libexec/trusttunnel/routing && install -m 0755 /rootfs-stubs/trusttunnel_client /opt/trusttunnel_client/trusttunnel_client && install -m 0755 /rootfs-stubs/setup_wizard /opt/trusttunnel_client/setup_wizard` before invoking ucode (if bind-mount + install is rejected, the documented alternative is `docker cp` into a named container + `docker exec`).
 
@@ -185,7 +185,7 @@ Scenario matrix (each `setup.sh` is written from the issue's method semantics so
 
 Run (capture mode, against the current file): `TT_CAPTURE=1 tests/test_backend_contract.sh` — Expected: writes `tests/backend/scenarios/<name>/golden/<method>.json` for every (scenario, method) pair; non-empty files; runner then re-runs in verify mode against the same file and reports 100% pass (self-consistency of the harness).
 
-- [ ] **Step 5: Module-import gate on the current file**
+- [x] **Step 5: Module-import gate on the current file**
 
 Run the ci.yml "ucode module imports" grep loop (lines 110–133) against the current file — Expected: `every module function used is imported`.
 
@@ -198,19 +198,19 @@ Run the ci.yml "ucode module imports" grep loop (lines 110–133) against the cu
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (imports, constants, `srand(time())`, all helpers, skeleton `return { 'luci.trusttunnel': {} };`)
 - Modify: `tests/backend/harness.uc` (`--helpers` assertions)
 
-- [ ] **Step 1: Write the helper unit assertions from the contract**
+- [x] **Step 1: Write the helper unit assertions from the contract**
 
 In `harness.uc --helpers`, assert: `sh`/`sh_out` merge/redirect semantics via stub `printf` (code from `p.close()`, out strings); `shq` escaping (input `a'b c` → quoted form that a stub round-trips); `tmp_path` shape `/tmp/.tt-<prefix>-…` and non-collision over 100 calls; `write_secret_tmp` returns existing file with mode 0600 (via `stat`); `vercmp` matrix (`1.0.9` vs `1.0.10` → −1; `v1.0.10` vs `1.0.10-r1` → 0; `1.0.10-r1` vs `1.0.10-r2` → 0 after `-rN` strip — per contract both drop suffixes, so equal; `1.1.0` vs `1.0.99` → 1; `abc` vs `1.0.0` → −1: the unparseable side becomes `[0]` via the numeric-match fallback and loses to `[1,0,0]`); `records`/`first` on a fixture TSV (repeated keys → arrays, tab-less lines skipped, missing key → `first` default); `uciget` via stub `uci -q get` (trimmed); `routing_status` on stub output (all four flags + `client device X`, and early-out all-false when the records file is absent); `parse_ping` on a full/partial summary (sent/received/loss rounding, min/avg/max, missing lines keep defaults loss 100 / nulls); `endpoint_host` on `host:443`, `[2001:db8::1]:443`, `2001:db8::1` (no port), plain `host`.
 
-- [ ] **Step 2: Run the helper probe against the CURRENT file**
+- [x] **Step 2: Run the helper probe against the CURRENT file**
 
 Run: `tests/backend/ucode-check.sh -x '--helpers'` (exec mode runs the sandboxed backend + harness) — Expected: all helper assertions pass (validates the assertions against the oracle).
 
-- [ ] **Step 3: Implement the helpers in the new file**
+- [x] **Step 3: Implement the helpers in the new file**
 
 Write the new file's prologue (`'use strict';`, fs/math imports exactly per the issue, `srand(time())` at load, the constants verbatim, all 12 helpers) plus the empty-object skeleton — from the issue contract only.
 
-- [ ] **Step 4: Gate + probe on the new file**
+- [x] **Step 4: Gate + probe on the new file**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0. Then `tests/backend/ucode-check.sh -x '--helpers'` — Expected: all pass.
 
@@ -222,19 +222,19 @@ Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/sha
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (add the three methods to the returned object)
 
-- [ ] **Step 1: Failing harness run (TDD)**
+- [x] **Step 1: Failing harness run (TDD)**
 
 Run: `TT_METHODS=status,service,log tests/test_backend_contract.sh` against the new file — Expected: FAIL (methods missing — the skeleton object returns no such method; harness reports missing method / exception).
 
-- [ ] **Step 2: Implement the three methods**
+- [x] **Step 2: Implement the three methods**
 
 From the contract: `status` — `records()` + `routing_status()` + init.d `running` check, `device` from live `routing_status().device` (null when absent), the full actualized key set and order per R1/D9: `enabled, running, device, device_up, rule, table, nft, endpoint_hostname, addresses[], client_installed, routing_profile, routing_mode, vpn_mode`; `routing_profile`/`routing_mode` from the resolved records (`first(rec, 'routing_profile.name'|'routing_profile.mode', '')` — empty when unassigned); `vpn_mode` = `'selective'` iff `routing_mode == 'bypass'`, else `'general'`; `service` — action validation, init.d dispatch, `start` sleep-1 + re-check with `{code:1, output, not_running:true}` (D6); `log` — `logread -e trusttunnel | tail -n N` with `int(n)`, trim-then-split (D3).
 
-- [ ] **Step 3: Gate**
+- [x] **Step 3: Gate**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0.
 
-- [ ] **Step 4: Harness vs goldens**
+- [x] **Step 4: Harness vs goldens**
 
 Run: `TT_METHODS=status,service,log tests/test_backend_contract.sh` — Expected: PASS against `base`, `bypass-profile`, `vpn-profile`, `service-stopped`, `no-records` goldens (status × legacy empty `routing_profile`/`routing_mode` with `vpn_mode` `'general'`; bypass-profile `routing_mode` `'bypass'` with `vpn_mode` `'selective'`; vpn-profile `routing_mode` `'vpn'` with `vpn_mode` `'general'`; plus `enabled`/`running`/`device` variants; service × start/stop/restart/reload/start-not-running/invalid; log × default + custom `lines`).
 
@@ -246,19 +246,19 @@ Run: `TT_METHODS=status,service,log tests/test_backend_contract.sh` — Expected
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (add the two methods)
 
-- [ ] **Step 1: Failing harness run**
+- [x] **Step 1: Failing harness run**
 
 Run: `TT_METHODS=ping,probe tests/test_backend_contract.sh` — Expected: FAIL (methods missing).
 
-- [ ] **Step 2: Implement the two methods**
+- [x] **Step 2: Implement the two methods**
 
 From the contract: `ping` — explicit `target` arg else `endpoint_host()` of every `endpoint.address`, `{error: 'no endpoint address configured'}` when empty, `ping -c 4 -W 2 -q <host>` via `sh`, `parse_ping` per result, `{results: [...]}` (D9); `probe` — live device from `routing_status()`, the two error strings when no device, `curl -fsS --max-time 8 [--interface <dev>] https://api.ipify.org` via `sh`, ip on exit 0 else trimmed output or `'request failed'` fallback (D4).
 
-- [ ] **Step 3: Gate**
+- [x] **Step 3: Gate**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0.
 
-- [ ] **Step 4: Harness vs goldens**
+- [x] **Step 4: Harness vs goldens**
 
 Run: `TT_METHODS=ping,probe tests/test_backend_contract.sh` — Expected: PASS (ping × explicit-target / from-addresses / no-addresses; probe × base tunnel-ip≠direct-ip / tunnel-failure error / probe-no-device scenario).
 
@@ -270,11 +270,11 @@ Run: `TT_METHODS=ping,probe tests/test_backend_contract.sh` — Expected: PASS (
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (add the two methods)
 
-- [ ] **Step 1: Failing harness run**
+- [x] **Step 1: Failing harness run**
 
 Run: `TT_METHODS=check_domain,versions tests/test_backend_contract.sh` — Expected: FAIL (methods missing).
 
-- [ ] **Step 2: Implement the two methods**
+- [x] **Step 2: Implement the two methods**
 
 From the contract: `check_domain` — empty/blank → `{error: 'domain is required'}`; resolve the effective list key from `records()`: `routing_profile.vpn_rules` when a profile is assigned (`routing_profile.name` non-empty) AND `routing_profile.mode == 'bypass'`, `routing_profile.bypass_rules` when a profile is assigned in vpn mode, else the legacy `domains.direct`; case-insensitive compare (exact or `.<d>`-suffix, both sides lowercased) against that list; `{domain, normalized (lowercased), verdict, reason}` with the exact reason strings per mode:
 - bypass mode: in_list → verdict `'tunnel'`, reason `"listed in the profile's VPN rules; the client routes it through the tunnel"`; not in_list → verdict `'direct'`, reason `"the assigned profile is in bypass mode; everything else stays direct"`;
@@ -282,11 +282,11 @@ From the contract: `check_domain` — empty/blank → `{error: 'domain is requir
 - legacy: in_list → verdict `'direct'`, reason `'listed in the "do not bypass" list; the client sends it out by SNI'`; not in_list → verdict `'tunnel'`, reason `'all LAN traffic goes through the tunnel (full-tunnel mode)'`.
 `versions` — initial key set per D8; client version regex `[0-9]+\.[0-9]+\.[0-9]+[^ \t\n]*` on `--version` output; package via `apk list -I luci-app-trusttunnel` regex `luci-app-trusttunnel-([^ \t\n]+)` else `opkg info` `^Version: ([^ \t\n]+)$`; cache logic: `stat` + `time()` freshness, cache-behind-installed invalidation + immediate refetch, `curl -fsS --max-time 15` to `RELEASE_URL`, `json(rr.out)?.tag_name`, `mkdir` ×2 then `writefile` `sprintf('%J', {tag, checked_at})` with `logger -t trusttunnel` on failure, network-failure fallback to cache with `stale: true`; `update_available`/`ahead` from `vercmp`.
 
-- [ ] **Step 3: Gate**
+- [x] **Step 3: Gate**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0.
 
-- [ ] **Step 4: Harness vs goldens**
+- [x] **Step 4: Harness vs goldens**
 
 Run: `TT_METHODS=check_domain,versions tests/test_backend_contract.sh` — Expected: PASS (check_domain × bypass-profile in-vpn_rules → `tunnel` / bypass-profile not-listed → `direct` (bypass reason strings); vpn-profile in-bypass_rules → `direct` / vpn-profile not-listed → `tunnel` (vpn reason strings); base legacy in-direct / suffix-match / non-direct with the two legacy reason strings; empty → error; case-variant matching case-insensitively across all three list keys; versions × base fresh-cache, `versions-stale-cache` (curl ok, cache mtime old), `versions-net-fail` (curl fails, cache exists → `stale: true`), `versions-cache-behind` (cache tag < installed → refetch), refresh=true, `versions-opkg` (apk stub empty → opkg path), client-missing variant in `no-records`).
 
@@ -298,19 +298,19 @@ Run: `TT_METHODS=check_domain,versions tests/test_backend_contract.sh` — Expec
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (add the method)
 
-- [ ] **Step 1: Failing harness run**
+- [x] **Step 1: Failing harness run**
 
 Run: `TT_METHODS=diagnose tests/test_backend_contract.sh` — Expected: FAIL (method missing).
 
-- [ ] **Step 2: Implement the method**
+- [x] **Step 2: Implement the method**
 
 From the contract + D2: the up-to-18-entry check list in exact order, groups config/prereq/service/kernel/network: Endpoint address, Credentials, TLS host name (warn-if-empty), Routing profile (after TLS host name — ok with detail `pname + ' (' + pmode + ')'` when `routing_profile.name` is set, else warn with detail `'none — legacy full-tunnel mode'` and hint `'Assign a routing profile on the Settings page to control what goes through the tunnel.'`), TrustTunnel client, tun device, Enabled, Running (fail-if-enabled-else-skip), Tunnel device (ok/fail-if-running/skip), MTU matches settings (conditional mismatch warn), Route attached via `ip route show table <T>` containing `dev <dev>`, Tunnel carrier via sysfs, rule/table/nft from `routing_status()` with skip-when-not-applied, Firewall zone via `nft list ruleset` containing `trusttunnel`, Endpoint reachable `ping -c 2 -W 2`, Traffic via ipify device-vs-direct with the three-way ok/warn/skip; detail/hint strings per goldens, `counts` and `verdict` aggregation.
 
-- [ ] **Step 3: Gate**
+- [x] **Step 3: Gate**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0.
 
-- [ ] **Step 4: Harness vs goldens**
+- [x] **Step 4: Harness vs goldens**
 
 Run: `TT_METHODS=diagnose tests/test_backend_contract.sh` — Expected: PASS (base legacy healthy = 17 entries `{ok:16,warn:1,fail:0,skip:0}` verdict `warn` — the single warn is the Routing profile entry; bypass-profile/vpn-profile healthy = 17 entries `{ok:17,warn:0,fail:0,skip:0}` verdict `ok`; diagnose-mtu-mismatch = 18 entries with the MTU warn added (`{ok:16,warn:2,fail:0,skip:0}` verdict `warn` on the legacy base); diagnose-not-applied with skips; diagnose-no-device; diagnose-degraded combining unreachable endpoint / missing firewall / same-ip traffic fail-warn cases).
 
@@ -322,11 +322,11 @@ Run: `TT_METHODS=diagnose tests/test_backend_contract.sh` — Expected: PASS (ba
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (add the method)
 
-- [ ] **Step 1: Failing harness run**
+- [x] **Step 1: Failing harness run**
 
 Run: `TT_METHODS=import_config tests/test_backend_contract.sh` — Expected: FAIL (method missing).
 
-- [ ] **Step 2: Implement the method**
+- [x] **Step 2: Implement the method**
 
 From the contract + D7: empty text error; missing wizard error; `tt://` prefix (`wildcard(trimmed, 'tt://*')`) → `--deeplink <link> --settings <out>`; else `write_secret_tmp('import-in', text)` → `--endpoint_config <file> --settings <out>`; output `chmod 0600` before read; both temp files unlinked on all paths; failure or empty output → panic-noise filter → `{error: join(" ", survivors)}` or `'setup_wizard failed'`.
 
@@ -339,11 +339,11 @@ Then the shape-based parser over `^ *([a-z0-9_]+) *= *(.*)$` lines, dispatching 
 - all-fields-empty → `{error: 'setup_wizard produced no recognisable endpoint fields'}` — the recognisability test covers `hostname`/`username`/`password`/`certificate`/`addresses` only, so e.g. a config with just `custom_sni` still errors;
 - never invokes UCI.
 
-- [ ] **Step 3: Gate**
+- [x] **Step 3: Gate**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` — Expected: exit 0.
 
-- [ ] **Step 4: Harness vs goldens + security assertions**
+- [x] **Step 4: Harness vs goldens + security assertions**
 
 Run: `TT_METHODS=import_config tests/test_backend_contract.sh` — Expected: PASS (deeplink success; file-mode success; every-field import — wizard output carrying all 12 keys (`hostname, username, password, certificate, custom_sni, client_random, protocol, anti_dpi, has_ipv6, skip_verification, addresses[], dns_upstreams[]`) byte-matches the golden; malformed-value import — bad boolean dropped, unquoted string skipped, empty-quoted strings skipped, unknown keys ignored, `upstream_protocol` other than http2/http3 dropped, only `custom_sni` set → unrecognisable error; panic-dump failure with filtered message; empty text; missing wizard in a scenario variant; unrecognisable fields). Additional runner assertions from the stub log: the `--endpoint_config` file had mode 0600 at wizard-call time; the settings output file was chmod'ed to 0600; both temp paths no longer exist after the call; `uci` stub log contains no invocations during any import scenario.
 
@@ -355,23 +355,23 @@ Run: `TT_METHODS=import_config tests/test_backend_contract.sh` — Expected: PAS
 
 - Modify: none (verification only)
 
-- [ ] **Step 1: Full harness run**
+- [x] **Step 1: Full harness run**
 
 Run: `tests/test_backend_contract.sh` (no `TT_METHODS` filter) — Expected: every scenario × method byte-matches the Task 1 goldens, including the helper probe.
 
-- [ ] **Step 2: Full ci.yml-equivalent gates**
+- [x] **Step 2: Full ci.yml-equivalent gates**
 
 Run: `tests/backend/ucode-check.sh -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel` (exit 0), the `let x = ;` negative control (non-zero), and the ci.yml "ucode module imports" grep loop (lines 110–133) against the new file (`every module function used is imported`).
 
-- [ ] **Step 3: Key-diff against baseline**
+- [x] **Step 3: Key-diff against baseline**
 
 Re-run `TT_CAPTURE=1 tests/test_backend_contract.sh` into a temp dir and `diff -r` against the committed goldens — Expected: no differences (byte-level proof, independent of the runner's own comparison).
 
-- [ ] **Step 4: Live ubus comparison (requires a device with the TT-06 init script)**
+- [x] **Step 4: Live ubus comparison (requires a device with the TT-06 init script)**
 
 On the device: back up the current file (`cp /usr/share/rpcd/ucode/luci.trusttunnel /tmp/old.uc`), copy the reimplemented file in its place, restart rpcd (`/etc/init.d/rpcd restart`), and for each of the 9 methods run `ubus call luci.trusttunnel <method> '<args>'` capturing JSON; swap back, restart rpcd, and re-call with the same UCI state; then `jq -S` both outputs per method and `diff` — Expected: key sets and values identical (volatile fields `checked_at` normalized; `service`/`import_config` compared on their non-mutating branches or state-restored). If no device is available, record in the issue that the dockerized rootfs goldens are the substitute oracle and mark this step skipped.
 
-- [ ] **Step 5: Repo hygiene + acceptance walk**
+- [x] **Step 5: Repo hygiene + acceptance walk**
 
 Run: `git status --short` and `git diff --stat` — Expected: the backend file replaced in place; no `*.old`/`*.bak` copies; no other tracked files changed except the test files. Walk the five issue acceptance criteria: 9 methods re-expressed (harness green), ucode syntax gate (Step 2), module-import check (Step 2), response key sets byte-match (Steps 1/3/4), versions cache behavior matches (Task 5).
 
