@@ -229,13 +229,13 @@ here.
 
 ## Tasks
 
-### [ ] Task 1: Snapshot the oracle and capture `routing dump` goldens
+### [x] Task 1: Snapshot the oracle and capture `routing dump` goldens
 
 **Files:**
 
 - Create: `/tmp/tt05/` (routing.old, test_routing.old.sh, up.tsv, router.tsv, up.golden, router.golden)
 
-- [ ] **Step 1: Snapshot the old implementation**
+- [x] **Step 1: Snapshot the old implementation**
 
 ```sh
 mkdir -p /tmp/tt05
@@ -243,7 +243,7 @@ cp packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing /tmp/tt05/
 cp tests/test_routing.sh /tmp/tt05/test_routing.old.sh
 ```
 
-- [ ] **Step 2: Write the two record fixtures (data, from the contract)**
+- [x] **Step 2: Write the two record fixtures (data, from the contract)**
 
 `/tmp/tt05/up.tsv` (router traffic off; no `blackhole_on_down` key → default 1):
 `network.fwmark⇥0x9527`, `network.lan_devices⇥br-lan br-guest`,
@@ -253,14 +253,14 @@ cp tests/test_routing.sh /tmp/tt05/test_routing.old.sh
 `network.fwmark⇥0x9527`, `network.lan_devices⇥br-lan`,
 `network.include_router_traffic⇥1`.
 
-- [ ] **Step 3: Capture the goldens from the OLD implementation**
+- [x] **Step 3: Capture the goldens from the OLD implementation**
 
 ```sh
 sh /tmp/tt05/routing.old dump /tmp/tt05/up.tsv > /tmp/tt05/up.golden
 sh /tmp/tt05/routing.old dump /tmp/tt05/router.tsv > /tmp/tt05/router.golden
 ```
 
-- [ ] **Step 4: Validate the goldens + record the suite baseline**
+- [x] **Step 4: Validate the goldens + record the suite baseline**
 
 ```sh
 test -s /tmp/tt05/up.golden && test -s /tmp/tt05/router.golden
@@ -277,13 +277,13 @@ vs `{ "br-lan" }` in router.golden (the fixtures differ in
 router.golden (blank line + `chain output { ... }` through its closing
 brace). Hashes recorded, full suite green before any change.
 
-### [ ] Task 2: Rewrite `tests/test_routing.sh` from the contract
+### [x] Task 2: Rewrite `tests/test_routing.sh` from the contract
 
 **Files:**
 
 - Modify: `tests/test_routing.sh` (complete rewrite, new text)
 
-- [ ] **Step 1: Write the rewritten test**
+- [x] **Step 1: Write the rewritten test**
 
 New text, keeping the harness conventions (`lib.sh` asserts, `TT_TEST_TMP`)
 and the stubbed `ip`/`nft` argv-logging technique (log to `$TT_CMD_LOG`; nft
@@ -335,14 +335,14 @@ Assertions (contract coverage; the old test's assertions kept, phrased anew):
 
 End with `tt_test_summary`.
 
-- [ ] **Step 2: Run the rewritten test against the OLD implementation (oracle)**
+- [x] **Step 2: Run the rewritten test against the OLD implementation (oracle)**
 
 Run: `TT_ROUTING=/tmp/tt05/routing.old sh tests/test_routing.sh`
 Expected: PASS, 0 failed. Any failure here means the test text diverges from
 the real behavior — fix the test (not the implementation) until green against
 the oracle.
 
-- [ ] **Step 3: Run the full suite with the old implementation still in place**
+- [x] **Step 3: Run the full suite with the old implementation still in place**
 
 Run: `sh tests/run.sh` Expected: all tests green (the rewritten test included).
 
@@ -350,13 +350,13 @@ Run: `sh tests/run.sh` Expected: all tests green (the rewritten test included).
 suite green; `test_routing.sh` is invoked via `sh` (no mode change needed —
 `run.sh` always shells it).
 
-### [ ] Task 3: Implement the new `routing` script from the contract
+### [x] Task 3: Implement the new `routing` script from the contract
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing` (complete rewrite, new expression)
 
-- [ ] **Step 1: Write the new script**
+- [x] **Step 1: Write the new script**
 
 Structure (contractual, written fresh):
 
@@ -441,7 +441,7 @@ Structure (contractual, written fresh):
 
 Then ensure the file mode stays executable (the rewrite must not clear it).
 
-- [ ] **Step 2: Syntax + lint gates**
+- [x] **Step 2: Syntax + lint gates**
 
 Run: `sh -n packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing`
 (clean) and the pinned shellcheck:
@@ -460,13 +460,13 @@ grep -Fq 'TT_NFT="${TT_NFT:-nft}"' packages/luci-app-trusttunnel/root/usr/libexe
 
 Expected: both exit 0.
 
-- [ ] **Step 3: Run the rewritten test against the NEW implementation**
+- [x] **Step 3: Run the rewritten test against the NEW implementation**
 
 Run: `sh tests/test_routing.sh` Expected: PASS, 0 failed. Any failure is a
 behavioral gap in the new script — fix the implementation, never the test
 (the test is contract-pinned and oracle-validated).
 
-- [ ] **Step 4: Byte-diff the goldens**
+- [x] **Step 4: Byte-diff the goldens**
 
 Run:
 `diff /tmp/tt05/up.golden <(sh packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing dump /tmp/tt05/up.tsv)`
@@ -477,18 +477,18 @@ Expected: both empty. Iterate on the assembly until byte-identical
 **Verification**: rewritten test green against the new script; both golden
 diffs empty; `sh -n` and shellcheck clean; mode 100755.
 
-### [ ] Task 4: End-to-end verification and smoke checklist
+### [x] Task 4: End-to-end verification and smoke checklist
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Full suite**
+- [x] **Step 1: Full suite**
 
 Run: `sh tests/run.sh` Expected: `== all tests passed`, 0 failed. This run
 includes test_deps.sh, which asserts the exact literals
 `TT_IP="${TT_IP:-ip}"` and `TT_NFT="${TT_NFT:-nft}"` in `routing` — a
 rephrased default would fail here (Task 3 Step 1 pins them).
 
-- [ ] **Step 2: Final golden cmp + lint + mode**
+- [x] **Step 2: Final golden cmp + lint + mode**
 
 Run:
 `cmp /tmp/tt05/up.golden <(sh packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing dump /tmp/tt05/up.tsv) &&
@@ -503,7 +503,7 @@ record) and other pre-existing untracked dirs (e.g. `docs/`) are expected
 and allowed — what must NOT appear: `*.old` files, golden files, fixtures,
 or any other new `??` entry.
 
-- [ ] **Step 3: Device/rootfs smoke checklist** (OpenWrt with busybox
+- [x] **Step 3: Device/rootfs smoke checklist** (OpenWrt with busybox
   `ip`/`nft`, real records file)
 
 1. `routing up <records> <outdir>` → exit 0; `routing status` shows `rule

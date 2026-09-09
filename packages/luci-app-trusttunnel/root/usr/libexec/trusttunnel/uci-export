@@ -1,73 +1,84 @@
 #!/bin/sh
-# Exports the trusttunnel UCI config into the records format on stdout.
-# The schema is enumerated explicitly: this keeps foreign edits' junk out
-# of records.
+# uci-export: dump the trusttunnel UCI config as the records TSV.
 #
-# `set -u` is NOT set here and must not return. VERIFIED on a live router:
-# /lib/functions.sh reads uninitialized variables — first IPKG_INSTROOT,
-# then CONFIG_LIST_STATE inside config_load — and under `set -u` the script
-# fails silently, printing not a single record. This is the first step of
-# the service start, so the service does not start at all. The library is
-# incompatible with this mode as a whole, not in some single spot:
-# pre-initializing variables one by one does not help, because new
-# undeclared references appear deeper as config_load/config_get execute.
+# Every line is "section.option<TAB>value"; list options repeat the key
+# once per value. The emitted key set — 26 keys, fixed order — is the
+# canonical schema the init script's change classifier and the records
+# accessor library consume, so nothing outside it is ever printed:
+# foreign sections or options in the UCI config must not leak into the
+# records.
+#
+# Two hard constraints, both behavioral:
+# - "set -u" must NOT be used: /lib/functions.sh reads uninitialized
+#   variables (IPKG_INSTROOT at source time, CONFIG_LIST_STATE inside
+#   config_load) and dies before printing anything under set -u.
+# - endpoint.certificate is deliberately not exported: PEM is multi-line
+#   and cannot be a record value; the init script writes it separately
+#   to endpoint.pem.
 
-# OpenWrt library, absent on the linter's machine.
 # shellcheck disable=SC1091
 . /lib/functions.sh
+
 config_load trusttunnel
 
-_emit_one() { printf '%s\t%s\n' "$_KEY" "$1"; }
-
+# One line per configured scalar; empty and absent options are skipped
+# (a zero is a real value and is emitted).
 scalar() {
-	config_get _v "$1" "$2"
-	[ -n "${_v:-}" ] && printf '%s\t%s\n' "$1.$2" "$_v"
-	return 0
+	_sec=$1
+	_opt=$2
+	_val=""
+	config_get _val "$_sec" "$_opt"
+	[ -n "$_val" ] || return 0
+	printf '%s\t%s\n' "$_sec.$_opt" "$_val"
 }
 
+# One line per list value, through the shared emission callback.
 listopt() {
-	_KEY="$1.$2"
-	config_list_foreach "$1" "$2" _emit_one
-	return 0
+	_sec=$1
+	_opt=$2
+	_KEY="$_sec.$_opt"
+	config_list_foreach "$_sec" "$_opt" _emit_one
 }
+
+# Emission callback: prints the pending _KEY once per list value.
+_emit_one() {
+	printf '%s\t%s\n' "$_KEY" "$1"
+}
+
+# config_foreach callback: record the routing_profile section whose name
+# matches the assigned profile; other sections are skipped.
+# shellcheck disable=SC2317,SC2154
+find_profile() {
+	_sec=$1
+	_name=""
+	config_get _name "$_sec" name
+	[ "$_name" = "$profile_want" ] || return 0
+	profile_sec="$_sec"
+}
+
+# The assigned profile is resolved by NAME, so an empty or stale reference
+# exports no profile records at all.
+profile_want=$(uci -q get trusttunnel.endpoint.routing_profile 2>/dev/null) || profile_want=""
+profile_sec=""
+config_foreach find_profile routing_profile
+
+# schema-keys: routing_profile.name routing_profile.mode routing_profile.vpn_rules routing_profile.bypass_rules
 
 for o in enabled log_level; do scalar main "$o"; done
-# endpoint.certificate is deliberately NOT exported: the PEM is multi-line,
-# and a record value cannot contain a newline. The init script writes the
-# certificate into a separate file and passes it to gen-config as its
-# second argument.
-for o in hostname username password protocol anti_dpi post_quantum \
-		skip_verification has_ipv6 custom_sni client_random \
-		routing_profile; do
+
+for o in hostname username password protocol anti_dpi post_quantum skip_verification has_ipv6 \
+		custom_sni client_random routing_profile; do
 	scalar endpoint "$o"
 done
+
 listopt endpoint address
 listopt endpoint dns_upstream
 
-# The ASSIGNED routing profile, resolved here by endpoint.routing_profile
-# (a profile NAME, unique across the routing_profile sections). It is
-# exported under the canonical key prefix routing_profile.<option>, without
-# the UCI section id: records consumers (gen-config, the apply diff, the
-# ucode backend) need one resolved view, not the raw sections.
-#
-# The keys are mirrored in the completeness test (test_init_apply.sh reads
-# the marker line below); keep them in sync with the loop options.
-# schema-keys: routing_profile.name routing_profile.mode routing_profile.vpn_rules routing_profile.bypass_rules
-profile_want=$(uci -q get trusttunnel.endpoint.routing_profile 2>/dev/null) || profile_want=""
-profile_sec=""
-# config_foreach + config_get, invisible to the linter.
-# shellcheck disable=SC2317,SC2154
-find_profile() {
-	config_get _pname "$1" name
-	[ "$_pname" = "$profile_want" ] && profile_sec="$1"
-}
-if [ -n "$profile_want" ]; then
-	config_foreach find_profile routing_profile
-fi
 if [ -n "$profile_sec" ]; then
 	for o in name mode; do
-		config_get _v "$profile_sec" "$o"
-		[ -n "${_v:-}" ] && printf 'routing_profile.%s\t%s\n' "$o" "$_v"
+		config_get _val "$profile_sec" "$o"
+		[ -n "$_val" ] || continue
+		printf '%s\t%s\n' "routing_profile.$o" "$_val"
 	done
 	for o in vpn_rules bypass_rules; do
 		_KEY="routing_profile.$o"
@@ -75,11 +86,6 @@ if [ -n "$profile_sec" ]; then
 	done
 fi
 
-# The "device" option is GONE here: the client picks the device name and
-# no such setting exists. The original list machinery (list_dns,
-# list_resolver, doh_network, intercept_dns) was removed: the fork has no
-# community lists, and its "selective" mode is the routing profile's bypass
-# mode, which needs no per-list resolver settings.
 for o in mtu table fwmark blackhole_on_down include_router_traffic \
 		lan_devices; do
 	scalar network "$o"

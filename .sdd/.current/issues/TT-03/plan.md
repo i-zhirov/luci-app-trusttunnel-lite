@@ -361,7 +361,7 @@ using it as the equivalence oracle is the PRD's own methodology (SC-003).
 
 ## Tasks
 
-### [ ] Task 1: Baseline capture — record the current state and freeze the golden output
+### [x] Task 1: Baseline capture — record the current state and freeze the golden output
 
 **Files:**
 
@@ -371,14 +371,18 @@ using it as the equivalence oracle is the PRD's own methodology (SC-003).
   `$TMPDIR/tt03-scratch/stale-name.uci`,
   `$TMPDIR/tt03-scratch/minimal.uci`, `$TMPDIR/tt03-scratch/golden-*.tsv`
 
-- [ ] **Step 1: Record the pre-change suite result**
+- [x] **Step 1: Record the pre-change suite result**
 
 Run: `sh tests/run.sh` Expected: all green. Record the current test-file
 count and assertion totals (including `test_init_apply.sh`'s own count) in
 the issue's implementation notes — these are the baseline the final task
 must reproduce. Do not assume pre-rebase numbers; re-measure now.
+Baseline recorded (tree state `8ec241f`, 2026-09-09): 7 test files, 199
+assertions, 0 failed; per file: test_deps 26, test_gen_config 47,
+test_harness 5, test_init_apply 29, test_init_reload 21, test_records 31,
+test_routing 40. See "Implementation notes" below.
 
-- [ ] **Step 2: Build the scratch UCI configs**
+- [x] **Step 2: Build the scratch UCI configs**
 
 Write four configs in `uci export` syntax (`config <type> '<name>'`,
 `option <key> '<value>'`, `list <key> '<value>'`):
@@ -405,7 +409,7 @@ Write four configs in `uci export` syntax (`config <type> '<name>'`,
    (`main.enabled`, `endpoint.hostname`, `endpoint.address`,
    `endpoint.username`, `endpoint.password`, `network.mtu`).
 
-- [ ] **Step 3: Write the scaffold — `functions.sh` stub + `uci` shim**
+- [x] **Step 3: Write the scaffold — `functions.sh` stub + `uci` shim**
 
 Fresh scaffolding (new expression, not derived from the inherited file),
 written from OpenWrt's documented API:
@@ -424,7 +428,7 @@ written from OpenWrt's documented API:
 The config path may be wired via a fixed relative location or an
 environment variable.
 
-- [ ] **Step 4: Capture the golden output from the OLD script**
+- [x] **Step 4: Capture the golden output from the OLD script**
 
 Run the old `uci-export` with the stub installed as `/lib/functions.sh`
 and the shim on PATH (docker alpine: `docker run --rm -e
@@ -438,7 +442,7 @@ configs and save the RAW output as `golden-full.tsv`, `golden-empty.tsv`,
 `shasum -a 256 golden-*.tsv`. The goldens are the old script's raw
 output — nothing is synthesized or reordered by hand.
 
-- [ ] **Step 5: Prove the goldens cover the required cases (fixtures as
+- [x] **Step 5: Prove the goldens cover the required cases (fixtures as
   reference only)**
 
 The fixtures are records INPUT data with comment lines and a different
@@ -467,13 +471,13 @@ bytes; the old script's raw output is).
 with recorded hashes; Step 5 coverage checks pass. The goldens are now the
 frozen old-vs-new oracle for the rewrite.
 
-### [ ] Task 2: Implement the new uci-export from the contract
+### [x] Task 2: Implement the new uci-export from the contract
 
 **Files:**
 
 - Rewrite: `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export`
 
-- [ ] **Step 1: Write the replacement (clean-room)**
+- [x] **Step 1: Write the replacement (clean-room)**
 
 Write the new file WITHOUT opening the inherited file; work only from the
 issue contract, this plan, the fixtures, and the observed behavior in
@@ -513,11 +517,11 @@ Research §1. Requirements:
 - Do NOT use `set -u`; do NOT emit `endpoint.certificate` or any
   not-contracted key.
 
-- [ ] **Step 2: Set the mode**
+- [x] **Step 2: Set the mode**
 
 Run: `chmod 755 packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export`
 
-- [ ] **Step 3: Verify the schema parse survives**
+- [x] **Step 3: Verify the schema parse survives**
 
 Run: `sh tests/test_init_apply.sh` Expected: PASS — the parser yields the
 26 keys (marker line + loops + listopts), the ≥15 sanity gate passes, and
@@ -528,14 +532,14 @@ the marker line is out of sync (see Research §2).
 **Verification**: `test_init_apply.sh` green; `sh -n` on the file clean;
 `grep -n 'set -u' <file>` finds nothing.
 
-### [ ] Task 3: Golden byte-diff and all gates
+### [x] Task 3: Golden byte-diff and all gates
 
 **Files:**
 
 - Test (scratch): `$TMPDIR/tt03-scratch/new-*.tsv` (diff against
   `golden-*.tsv`)
 
-- [ ] **Step 1: Byte-diff old vs new output**
+- [x] **Step 1: Byte-diff old vs new output**
 
 Run the NEW script with the same scaffold (stub + `uci` shim) and the same
 four scratch configs used for the goldens: `sh packages/.../uci-export >
@@ -546,12 +550,12 @@ difference means the new expression diverges from the old behavior — fix
 the implementation, then re-verify. (The fixtures are NOT part of this
 comparison; the goldens captured in Task 1 are the oracle.)
 
-- [ ] **Step 2: Full suite**
+- [x] **Step 2: Full suite**
 
 Run: `sh tests/run.sh` Expected: all test files green; assertion totals
 unchanged from the Task 1 Step 1 baseline (recorded in the issue notes).
 
-- [ ] **Step 3: Shellcheck**
+- [x] **Step 3: Shellcheck**
 
 Run: `docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0
 -s sh packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export`
@@ -562,7 +566,7 @@ indirectly; `profile_want`/`profile_sec` are assigned via `config_get` and
 inside the callback). No other check may be suppressed; any other warning
 is a finding against the implementation.
 
-- [ ] **Step 4: Executable bit in the index**
+- [x] **Step 4: Executable bit in the index**
 
 Run: `git add packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export
 && git ls-files -s -- packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export`
@@ -573,18 +577,18 @@ Expected: mode `100755` in the index (if `git add` did not preserve it,
 with baseline totals; shellcheck clean with only the three allowed
 disables; index mode `100755`.
 
-### [ ] Task 4: Cleanup and final state
+### [x] Task 4: Cleanup and final state
 
 **Files:**
 
 - Delete (scratch): `$TMPDIR/tt03-scratch/` (stub, shim, configs, goldens)
 
-- [ ] **Step 1: Remove the scratch scaffolding**
+- [x] **Step 1: Remove the scratch scaffolding**
 
 Run: `rm -rf "$TMPDIR/tt03-scratch"` — nothing from the golden harness may
 be committed; the equivalence proof is recorded as the verification result.
 
-- [ ] **Step 2: Confirm the tree delta**
+- [x] **Step 2: Confirm the tree delta**
 
 Run: `git status --short` Expected: the only tracked-file change is
 `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export`
@@ -593,7 +597,7 @@ Check there is no `*.old`, no backup of the inherited file, no leftover
 scratch under the repo tree (per PRD: the old file must not be kept
 alongside the new one).
 
-- [ ] **Step 3: Final suite run**
+- [x] **Step 3: Final suite run**
 
 Run: `sh tests/run.sh` Expected: all green; record the final assertion
 counts next to the baseline in the issue notes (must be identical to
@@ -605,9 +609,89 @@ If a router is reachable: `uci export trusttunnel` into a scratch config,
 run the new script against it, and compare byte-for-byte with the golden
 captured from the old script before the rewrite (or re-capture from git
 history: `git show HEAD:packages/.../uci-export`).
+NOT PERFORMED: no router reachable from the dev host; the container golden
+byte-diff (Task 3) is the equivalence proof, with goldens captured from
+the exact pre-rewrite blob (`585b58c`, verified equal to both `8ec241f` and
+`818a276` versions of the file).
 
 **Verification**: scratch gone; `git status` shows only the intended file;
 suite green; no inherited expression remains in the tree.
+
+## Implementation notes (2026-09-09, executed by sdd-coder)
+
+- **Baseline (Task 1 Step 1, tree `8ec241f`)**: `sh tests/run.sh` green,
+  exit 0 — 7 test files, 199 assertions, 0 failed. Per file: test_deps 26,
+  test_gen_config 47, test_harness 5, test_init_apply 29, test_init_reload
+  21, test_records 31, test_routing 40.
+- **Golden hashes (Task 1 Step 4, old script's raw output)**:
+  - `golden-full.tsv`    a0f634e25cc0222c18d73d9dc2185dcb2910f5f701d4dbb8bc1e069dfa9ad796
+  - `golden-empty.tsv`   4507c045aee3f7a6ff4ec886ef3f2928db304e5771888f2128b6d336fc18372c
+  - `golden-stale.tsv`   1b7fdb298f73aa63dda4803efffb1513276da5aa7f5aadffec5b0a75378e1784
+  - `golden-minimal.tsv` 1650fc3eccb5e1f41f7a3ca0e9786de0d8803c8c2898f0de47fd080c937ab885
+  - Coverage: golden-full emits the 25-key data set (fixture `full.tsv`'s
+    keys, all present, no foreign keys, no `endpoint.certificate`;
+    `network.lan_devices` absent — matches the fixture's 25-key subset),
+    the resolved `routing_profile.*` block present, list keys repeated,
+    `endpoint.password` pass-through with quote/backslash/embedded TAB.
+    golden-empty and golden-stale contain no `routing_profile.*` lines
+    (stale keeps the `endpoint.routing_profile Ghost` scalar). golden-minimal
+    emits exactly the 6 `minimal.tsv` keys. All four `rc=0`.
+  - Golden capture environment: docker alpine (`busybox ash`), scratch
+    `functions.sh` stub (config_load/config_get/config_list_foreach/
+    config_foreach per OpenWrt's documented API, raw-value preservation
+    verified against the password/backslash/TAB case) + `bin/uci` shim
+    (`-q get` semantics: value + exit 0; absent → silent, exit 1),
+    installed as `/lib/functions.sh` and on PATH in the container.
+- **Task 3 Step 1 byte-diff**: `cmp golden-<case>.tsv new-<case>.tsv` —
+  identical for full (833 B), empty-profile (620 B), stale-name (651 B),
+  minimal (144 B). Also verified: missing-config parity (old and new both
+  exit 0 with empty output).
+- **Task 2 Step 3 tripwire**: `tests/test_init_apply.sh` green —
+  "schema parse of uci-export yielded 26 keys", "every schema key is
+  classified explicitly", 29 assertions, 0 failed (count unchanged).
+- **Task 3 Step 3 shellcheck**: `koalaman/shellcheck:v0.11.0 -s sh` clean
+  (rc 0) with only the three in-file disables: SC1091 (above
+  `. /lib/functions.sh`), SC2317+SC2154 (above the `find_profile` callback).
+- **Task 3 Step 4**: index mode `100755` (`git ls-files -s` shows
+  `100755 c3ea8d4…`).
+- **Final suite (Task 4 Step 3)**: green, exit 0. NOTE: the worktree was
+  being worked in concurrently during this task — commits `ad9e3e6`
+  (gen-config reimplementation) and `818a276` (TT-04 docs) landed and
+  uncommitted TT-05 edits (`packages/.../routing`, `tests/test_routing.sh`,
+  `.sdd/.current/issues/TT-05/plan.md`) appeared mid-session. The suite
+  totals therefore differ from the 8ec241f baseline (gen_config 47→57 from
+  the TT-04 landing; routing 40→51 from the TT-05 in-tree edits). All
+  uci-export-relevant counts are unchanged: test_init_apply 29 (incl. the
+  26-key schema parse), test_init_reload 21, test_records 31, test_deps 26,
+  test_harness 5. `uci-export` itself is untouched by the concurrent work
+  (blob `585b58c` at both `8ec241f` and `818a276`), so the goldens remain
+  the old script's raw output.
+- **Deviations from this plan (with reasons)**:
+  1. *Scratch location*: Docker Desktop on macOS does not mount
+     `/var/folders` (and `/tmp` proved unreliable), so the scratch dir was
+     placed at a sibling of the repo under `/Users` (still outside the
+     repo; removed in Task 4).
+  2. *No `|| exit 1` after `config_load`*: the plan's Research §1 claimed
+     the old script exits non-zero when config loading fails; measured
+     behavior of the old script (missing-config case in the same harness)
+     is exit 0 with empty output — the old script ignores `config_load`'s
+     status. The new script matches the measured behavior
+     (`config_load trusttunnel` without status propagation), and the
+     missing-config outputs are byte-identical.
+  3. *No trailing `exit 0`*: shellcheck v0.11.0 fires SC2329 on the pure
+     callback functions (`find_profile`, `_emit_one`) when the script ends
+     with `exit 0`; without it the file is clean with exactly the three
+     allowed disables and still exits 0 (status of the final `listopt`
+     call, whose helper always succeeds).
+  4. *Task 4 Step 4 not performed* (no router reachable) — see above.
+- **Clean-room confirmation**: the inherited file's source was never read
+  during this task; goldens were captured by executing the old script
+  (blob `585b58c`) in the container. The new file was written only from
+  the issue contract, this plan (Research §1 behavior, §2 parser shape,
+  §3 scaffold), the fixture shape reference, and the measured goldens. No
+  spec-internal IDs appear in the shipped file. `git status` shows the new
+  `uci-export` staged (100755) and no `*.old`/backup of the inherited file
+  anywhere in the tree; the scratch harness was deleted in Task 4.
 
 ## Risks / Open Questions
 
