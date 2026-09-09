@@ -1,7 +1,7 @@
 # Implementation Plan: install.sh
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-18/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -194,7 +194,7 @@ The contract is the issue's "Contract to reproduce" section, plus the cross-file
 
 ## Tasks
 
-### [ ] Task 1: Baseline — shellcheck state, behavior inventory, preserve oracle copy
+### [x] Task 1: Baseline — shellcheck state, behavior inventory, preserve oracle copy
 
 **Files:**
 
@@ -203,29 +203,29 @@ The contract is the issue's "Contract to reproduce" section, plus the cross-file
 - Read: `.github/workflows/ci.yml` (shellcheck gate, lines 88–98; executable-bit gate, lines 33–51)
 - Read: `uninstall.sh` (consistency contract)
 
-- [ ] **Step 1: Record the linter and mode baseline**
+- [x] **Step 1: Record the linter and mode baseline**
 
 Run: `git ls-files -s install.sh` Expected: mode `100755`
 Run: `sh -n install.sh` Expected: exit 0
 Run: `docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh install.sh` Expected: exit 0, no findings (verified 2026-09-08)
 
-- [ ] **Step 2: Produce the behavior inventory**
+- [x] **Step 2: Produce the behavior inventory**
 
 Walk the issue's contract list against the current script and record the result — use the verification table in Research as the checklist; confirm each of the 12 contract items (including the nftables dependency set and the immediate uci-defaults run) and the D1–D4 notes. This inventory is the reference for the golden diff.
 
-- [ ] **Step 3: Preserve the oracle copy outside the repo**
+- [x] **Step 3: Preserve the oracle copy outside the repo**
 
 Copy the current script to the OS temp dir (e.g. `/var/folders/6x/s23gvzh933v4ml_5ybc_tydh0000gp/T/opencode/install.sh.baseline`). It is the oracle for the harness and the golden diff; it never enters the repo and is deleted in Task 8.
 
 **Verification**: all three checks in Step 1 are green and recorded; the inventory confirms every contract item; the baseline copy exists at the scratch path; `git status` shows no changes.
 
-### [ ] Task 2: Build the stub dry-run harness
+### [x] Task 2: Build the stub dry-run harness
 
 **Files:**
 
 - Create: `tests/install-harness.sh`
 
-- [ ] **Step 1: Write the harness skeleton + the chunk-1 scenarios (assertions first)**
+- [x] **Step 1: Write the harness skeleton + the chunk-1 scenarios (assertions first)**
 
 Implement the harness per the Research design: docker scenario runner, neutralization of real `apk`/`opkg`/`uname`/`usign`/`wget`, the stub set with env-driven canned outputs and call log, prep mirroring release.yml, and the chunk-1 scenario set:
 
@@ -239,27 +239,27 @@ Implement the harness per the Research design: docker scenario runner, neutraliz
 
 All harness code is new expression (it is not part of the inherited file).
 
-- [ ] **Step 2: Run the harness against the preserved current script (oracle green)**
+- [x] **Step 2: Run the harness against the preserved current script (oracle green)**
 
 Run: `TT_BASELINE_INSTALL=/var/folders/6x/s23gvzh933v4ml_5ybc_tydh0000gp/T/opencode/install.sh.baseline sh tests/install-harness.sh` Expected: every chunk-1 scenario PASSES against the inherited file (it is the oracle)
 
-- [ ] **Step 3: Negative control**
+- [x] **Step 3: Negative control**
 
 Temporarily invert one expectation (e.g., expect the wrong die message) → the harness must FAIL on the same scenario, proving it detects drift; revert.
 
 **Verification**: oracle green for all chunk-1 scenarios; negative control fails and is reverted; `tests/run.sh` is unaffected (no `test_*.sh` file added).
 
-### [ ] Task 3: Chunk 1 — header, environment checks, PM detection with version floors
+### [x] Task 3: Chunk 1 — header, environment checks, PM detection with version floors
 
 **Files:**
 
 - Modify: `install.sh` (top slice only — shebang, `set -e`, helpers, `TT_REPO_URL` + derived key URLs, OpenWrt-only check, PM detection, version floors)
 
-- [ ] **Step 1: Rewrite the slice from the contract**
+- [x] **Step 1: Rewrite the slice from the contract**
 
 Write this slice fresh from the issue's contract text (items 1–4 plus D1/D3 notes), replacing the inherited slice. No line of the new text is a transformation of the inherited line; behavior stays identical. The rest of the file is still the inherited tail (replaced in Tasks 4–7).
 
-- [ ] **Step 2: Verify the slice**
+- [x] **Step 2: Verify the slice**
 
 Run: `sh -n install.sh` Expected: exit 0
 Run: the pinned shellcheck command from Task 1 Expected: clean
@@ -267,42 +267,42 @@ Run: the harness with `TT_BASELINE_INSTALL` set, plus the new-file mode: `sh tes
 
 **Verification**: shellcheck clean; `sh -n` OK; harness chunk-1 scenarios green for new file and baseline (identical behavior); no `tests/` change beyond the harness.
 
-### [ ] Task 4: Chunk 2 — CPU check (`uname -m` allowlist, die before any writes)
+### [x] Task 4: Chunk 2 — CPU check (`uname -m` allowlist, die before any writes)
 
 **Files:**
 
 - Modify: `install.sh` (replace the architecture-check slice with fresh expression)
 - Modify: `tests/install-harness.sh` (add chunk-2 scenarios)
 
-- [ ] **Step 1: Add the chunk-2 harness scenarios**
+- [x] **Step 1: Add the chunk-2 harness scenarios**
 
 - `STUB_UNAME_M` = each of the 10 accepted names (x86_64, x86-64, x64, amd64, aarch64, arm64, armv7l, armv8l, mips, mipsel) → check passes.
 - `STUB_UNAME_M` ∈ {armv5tel, armv6l, mips64el, riscv64, powerpc, i386, (empty)} → die with an unsupported-CPU message, exit 1.
 - **Negative-write assertion**: for the riscv64 case, record a pre-run hash of `/etc/opkg/customfeeds.conf` (if present) and assert after the run: no `/etc/apk/keys/trusttunnel.pub`, no `/etc/apk/repositories.d/trusttunnel.list`, no `/etc/opkg/keys/trusttunnel.pub`, feed file unchanged — the check dies BEFORE any changes.
 
-- [ ] **Step 2: Run against the baseline copy**
+- [x] **Step 2: Run against the baseline copy**
 
 Expected: all chunk-2 scenarios green on the inherited file (it already dies before writes).
 
-- [ ] **Step 3: Rewrite the slice from the contract**
+- [x] **Step 3: Rewrite the slice from the contract**
 
 Replace the architecture-check slice (contract item 5): the same 10-name allowlist, the same die-before-any-writes position, message naming the unsupported CPU and the supported families.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: pinned shellcheck + `sh -n` Expected: clean/OK
 Run: harness (baseline + new file) Expected: all chunk-1 + chunk-2 scenarios green for both
 
 **Verification**: allowlist and negative-CPU behavior identical between baseline and new file; the negative-write assertion passes (zero writes on unsupported CPU).
 
-### [ ] Task 5: Chunk 3 — repository setup per PM (apk branch, then opkg branch)
+### [x] Task 5: Chunk 3 — repository setup per PM (apk branch, then opkg branch)
 
 **Files:**
 
 - Modify: `install.sh` (replace the repository-setup slice with fresh expression)
 - Modify: `tests/install-harness.sh` (add chunk-3 scenarios)
 
-- [ ] **Step 1: Add the chunk-3 harness scenarios (apk branch first)**
+- [x] **Step 1: Add the chunk-3 harness scenarios (apk branch first)**
 
 apk scenarios:
 - Happy path: `wget` stub records URL `<test-repo>/apk/key-build.pub` and `-O /etc/apk/keys/trusttunnel.pub`; file content = stub body; `apk --print-arch` stub prints `x86_64`; `/etc/apk/repositories.d/trusttunnel.list` contains exactly one line `<test-repo>/apk/x86_64/packages.adb`; call order: key fetch before `--print-arch` before the list write.
@@ -315,58 +315,58 @@ opkg scenarios:
 - Key fetch: `wget` records `<test-repo>/opkg/opkg-key.pub` → `/etc/opkg/keys/trusttunnel.pub`; `usign` stub prints `$STUB_USIGN_FP`; both `/etc/opkg/keys/trusttunnel.pub` and `/etc/opkg/keys/<fp>` exist with identical content (D2).
 - `wget` failure → die; `usign` missing (neutralized, no stub) → die; `usign` exit 1 → die.
 
-- [ ] **Step 2: Run against the baseline copy**
+- [x] **Step 2: Run against the baseline copy**
 
 Expected: all chunk-3 scenarios green on the inherited file.
 
-- [ ] **Step 3: Rewrite the slice from the contract**
+- [x] **Step 3: Rewrite the slice from the contract**
 
 Replace the repository-setup slice (contract items 6a/6b): apk branch (key first, `apk --print-arch`, explicit `packages.adb` entry) and opkg branch (idempotent feed append, key fetch, fingerprint copy, stable-name copy).
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: pinned shellcheck + `sh -n` Expected: clean/OK
 Run: harness (baseline + new file) Expected: chunks 1–3 green for both
 
 **Verification**: resulting `/etc/apk` and `/etc/opkg` file contents/call orders byte-identical between baseline and new file; idempotence and all failure paths match.
 
-### [ ] Task 6: Chunk 4 — update/install sequence (deps, app, optional i18n, tripwire)
+### [x] Task 6: Chunk 4 — update/install sequence (deps, app, optional i18n, tripwire)
 
 **Files:**
 
 - Modify: `install.sh` (replace the update+install slice with fresh expression)
 - Modify: `tests/install-harness.sh` (add chunk-4 scenarios)
 
-- [ ] **Step 1: Add the chunk-4 harness scenarios**
+- [x] **Step 1: Add the chunk-4 harness scenarios**
 
 - Happy path: call-log subsequence for apk is `update`, then `add kmod-tun ip-full nftables curl ca-bundle`, then `add luci-app-trusttunnel`, then `add luci-i18n-trusttunnel-ru`, then `info -e trusttunnel-client`; same ordering for opkg with its verbs (`update`, then `install kmod-tun ip-full nftables curl ca-bundle`, ...).
 - i18n failure is NOT fatal: `STUB_APK_ADD_RC`/`STUB_OPKG_FAIL_PKG=luci-i18n-trusttunnel-ru` → warning printed, exit 0, main package still installed.
 - Tripwire failure IS fatal: `STUB_APK_INFO_RC=1` (or canned `opkg list-installed` without `trusttunnel-client`) → die mentioning trusttunnel-client.
 - `update` failure → die.
 
-- [ ] **Step 2: Run against the baseline copy**
+- [x] **Step 2: Run against the baseline copy**
 
 Expected: all chunk-4 scenarios green on the inherited file.
 
-- [ ] **Step 3: Rewrite the slice from the contract**
+- [x] **Step 3: Rewrite the slice from the contract**
 
 Replace the update/install slice (contract items 7 and 9): update, explicit dependency set `kmod-tun ip-full nftables curl ca-bundle`, main package (fatal on failure), optional translation package (warning on failure, never fatal), tripwire check that the client package is installed.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: pinned shellcheck + `sh -n` Expected: clean/OK
 Run: harness (baseline + new file) Expected: chunks 1–4 green for both
 
 **Verification**: call order and failure semantics identical between baseline and new file (dependency set `kmod-tun ip-full nftables curl ca-bundle` — nftables included on both branches, i18n optional, tripwire fatal, update fatal).
 
-### [ ] Task 7: Chunk 5 — was_running remember/stop/restore, rpcd restart, immediate uci-defaults run, closing banner
+### [x] Task 7: Chunk 5 — was_running remember/stop/restore, rpcd restart, immediate uci-defaults run, closing banner
 
 **Files:**
 
 - Modify: `install.sh` (replace the service-state slice and the closing banner with fresh expression)
 - Modify: `tests/install-harness.sh` (add chunk-5 scenarios)
 
-- [ ] **Step 1: Add the chunk-5 harness scenarios**
+- [x] **Step 1: Add the chunk-5 harness scenarios**
 
 Use the fake `/etc/init.d/trusttunnel`, the optional fake `/etc/init.d/rpcd`, and the planted fake `/etc/uci-defaults/40-luci-trusttunnel` (all call-recording stubs):
 - First install: no fake init script planted → no `stop`/`start` calls recorded; service left disabled; script ends exit 0.
@@ -379,22 +379,22 @@ Use the fake `/etc/init.d/trusttunnel`, the optional fake `/etc/init.d/rpcd`, an
 - **Log assertion**: the exact warning fallback text above appears verbatim in the captured stdout of the FAILURE scenario, and is absent from the SUCCESS and ABSENT scenarios.
 - Closing output states the repository stays configured for `apk update && apk upgrade` / `opkg update && opkg upgrade`.
 
-- [ ] **Step 2: Run against the baseline copy**
+- [x] **Step 2: Run against the baseline copy**
 
 Expected: all chunk-5 scenarios green on the inherited file.
 
-- [ ] **Step 3: Rewrite the slice from the contract**
+- [x] **Step 3: Rewrite the slice from the contract**
 
 Replace the service-state slice and closing banner (contract items 8, 10, 11): remember `was_running` before stopping, stop only when the init script exists, `rpcd restart` (quieted, non-fatal), the IMMEDIATE uci-defaults run between the restart and the restore — guarded by `-x /etc/uci-defaults/40-luci-trusttunnel`, output silenced (`>/dev/null 2>&1`), and on failure the exact warning `warning: the default routing profile was not created; run /etc/uci-defaults/40-luci-trusttunnel manually` — restore only when `was_running=1` and only after the uci-defaults step, first install stays disabled, repo persistence stated.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: pinned shellcheck + `sh -n` Expected: clean/OK
 Run: harness (baseline + new file) Expected: all chunks green for both — the new file is now the complete reimplementation with zero inherited expression
 
 **Verification**: was_running restore semantics identical (first-install disabled; stop-then-start on reinstall with running service; no start when stopped); call order `rpcd restart` → `40-luci-trusttunnel` → `start` identical between baseline and new file; the exact warning fallback text present on uci-defaults failure and absent on success/absence; full harness suite green on both files.
 
-### [ ] Task 8: Full verification — shellcheck, sh -n, mode, repo suite, harness, rootfs golden diff, negative CPU
+### [x] Task 8: Full verification — shellcheck, sh -n, mode, repo suite, harness, rootfs golden diff, negative CPU
 
 **Files:**
 
@@ -402,21 +402,21 @@ Run: harness (baseline + new file) Expected: all chunks green for both — the n
 - Test: `tests/install-harness.sh`
 - Test: `tests/run.sh` (existing suite, unchanged — `tests/test_deps.sh` asserts both install.sh branches install `kmod-tun ip-full nftables curl ca-bundle` and the Makefile-declared deps)
 
-- [ ] **Step 1: Static gates**
+- [x] **Step 1: Static gates**
 
 Run: `docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh install.sh` Expected: clean
 Run: `sh -n install.sh` Expected: OK
 Run: `git ls-files -s install.sh` Expected: `100755` (re-run `chmod 755 install.sh && git add install.sh` if the mode dropped)
 
-- [ ] **Step 2: Repo unit suite gate**
+- [x] **Step 2: Repo unit suite gate**
 
 Run: `sh tests/run.sh` Expected: all existing tests pass — in particular `tests/test_deps.sh` asserts the rewritten install.sh's dependency lines: both the `apk add` and the `opkg install` branches must contain `kmod-tun ip-full nftables curl ca-bundle` (nftables included), and the Makefile-declared deps must still match.
 
-- [ ] **Step 3: Full harness suite**
+- [x] **Step 3: Full harness suite**
 
 Run: `sh tests/install-harness.sh` (new file + baseline) Expected: every scenario green for both; negative control red when a single expectation is inverted.
 
-- [ ] **Step 4: Rootfs golden diff against the current script's behavior**
+- [x] **Step 4: Rootfs golden diff against the current script's behavior**
 
 For each image `openwrt/rootfs:x86-64-25.12.0` (apk), `x86-64-22.03.7`, `x86-64-23.05.6`, `x86-64-24.10.8` (opkg):
 - Run the baseline copy in container A and the new file in container B (identical prep mirroring release.yml: `mkdir -p /var/lock /etc/apk/keys /etc/apk/repositories.d /etc/opkg/keys`; real tools, default `TT_REPO_URL` = live Pages repo).
@@ -424,13 +424,59 @@ For each image `openwrt/rootfs:x86-64-25.12.0` (apk), `x86-64-22.03.7`, `x86-64-
 - Assert the installed package set is identical: `apk info -e` / `opkg list-installed` show the three trusttunnel packages (luci-app-trusttunnel, luci-i18n-trusttunnel-ru, trusttunnel-client) + `kmod-tun ip-full nftables curl ca-bundle`.
 - Assert first-install service state: `/etc/init.d/trusttunnel` present, no start link in `/etc/rc.d/`.
 
-- [ ] **Step 5: Negative CPU test (final gate)**
+- [x] **Step 5: Negative CPU test (final gate)**
 
 Run the harness scenario with `STUB_UNAME_M=riscv64` Expected: exit 1, clear unsupported-CPU message, zero writes to the four state locations (assertion from Task 4).
 
-- [ ] **Step 6: Tree-cleanliness and cleanup**
+- [x] **Step 6: Tree-cleanliness and cleanup**
 
 Run: `git status --porcelain` Expected: only `install.sh` modified and `tests/install-harness.sh` added; no `*.old`, no backup of the old script in the repo (PRD convention).
 Delete the scratch baseline copy from the OS temp dir.
 
 **Verification**: all static gates green; `sh tests/run.sh` green (test_deps.sh asserts the nftables dependency lines on both branches); full harness green (new + baseline); rootfs golden diff byte-identical on apk 25.12 and opkg 22.03/23.05/24.10 — including the seeded `/etc/config/trusttunnel`; negative CPU dies before any writes; index mode `100755`; `git status` shows only the intended changes; the release.yml verify flow (TT-20's dependency) is unaffected because the state contracts are byte-identical.
+
+## Execution notes (implemented 2026-09-09, docker available — all steps ran)
+
+All tasks/steps above are marked `[x]`; docker was available, so no
+docker-dependent step was skipped. The deviations from the letter of the
+plan, with reasons:
+
+- **Task 3/4/5/6/7 — the new file was written in ONE pass from the contract,
+  in the plan's chunk order, instead of physically splicing the inherited
+  file slice by slice.** The clean-room rule forbids reading the inherited
+  text; slice boundaries and the tail's interfaces are unknowable without
+  reading it. Chunk-wise verification was preserved: each chunk's harness
+  scenario set was added and verified (baseline + new file) before moving
+  to the next chunk, red/green per chunk.
+- **Task 7 — the was_running remember/stop sits between the dependency
+  install and the main package install**, not before `apk update`/`opkg
+  update`. The oracle's call log shows the stop after the dependency
+  install; the harness assertion was calibrated to
+  `deps install → running probe → stop → main package` and an opkg-flavor
+  variant was added.
+- **Harness scratch lives under `$HOME`**, not `/tmp`: Docker Desktop on
+  macOS does not propagate mounts under `/tmp`/`/var/folders` into
+  containers (they appear empty). The baseline oracle copy itself still
+  lives in the OS temp dir and is mounted by copying it into the scratch.
+- **The opkg "fresh feed file" scenario deletes the stock
+  `customfeeds.conf` first**: the 22.03.7/23.05.6/24.10.8 rootfs images
+  ship a commented file, so the "created if absent" case needed the stock
+  file removed; a second scenario pins the append-to-stock-file behavior.
+- **The harness prep empties the stock `/etc/opkg/keys`**: the images
+  ship the OpenWrt feed key (e.g. `4d017e6f1ed5d616`), which otherwise
+  pollutes the "no fingerprint copy" assertions.
+- **Task 8 Step 4 — "no start link in /etc/rc.d/" calibrated**: the
+  package's uci-defaults script runs `enable` unconditionally during the
+  immediate install-time run, so `S95trusttunnel` appears in `/etc/rc.d/`
+  after every install. The golden diff asserts byte-identical `/etc/rc.d`
+  state (baseline == new) and that the service is never *started* by
+  install.sh; the plan's literal "no start link" assertion was replaced by
+  the equality check.
+- **On 22.03, `nftables` is a virtual package** resolved to
+  `nftables-json`; the `nft` binary installs, but the name does not appear
+  in `opkg list-installed`. The package-set diff stays byte-identical
+  (both sides show the same resolved set) and the nftables dependency
+  lines are pinned by `tests/test_deps.sh`.
+- **`git add` was not run**: the issue is not committed (per the dispatch);
+  the index keeps the original blob at mode `100755`; the working-tree
+  file is `100755` and will record that mode on commit.
