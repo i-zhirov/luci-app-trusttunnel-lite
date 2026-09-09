@@ -1,7 +1,7 @@
 # Implementation Plan: default UCI config
 
 - **Created**: 2026-09-08
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-15/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -238,7 +238,7 @@ Expected: empty — option set identical to the current file (5 sections, 22 opt
 
 The TT-03 export key set (schema-keys marker at uci-export line 55 plus the explicit loops) is: `main.enabled`, `main.log_level`; `endpoint.hostname/username/password/protocol/anti_dpi/post_quantum/skip_verification/has_ipv6/custom_sni/client_random/routing_profile`; list keys `endpoint.address`, `endpoint.dns_upstream`; `network.mtu/table/fwmark/blackhole_on_down/include_router_traffic/lan_devices`; `domains.direct`; and the resolved profile keys `routing_profile.name/mode/vpn_rules/bypass_rules`. Every scalar exists in the file; the only file option absent from the export schema is `endpoint.certificate` (deliberate per TT-03); all five list keys are empty lists on defaults, so `uci-export` emits zero list lines; the profile resolution picks the anonymous `routing_profile` section via `endpoint.routing_profile 'Default'` and emits `routing_profile.name` and `routing_profile.mode`.
 
-Expected: check passes — `uci-export` output on these defaults contains exactly the 19 scalars plus `routing_profile.name` + `routing_profile.mode` = 21 records in TT-03 order.
+Expected: check passes — `uci-export` output on these defaults contains 15 records in TT-03 order (main 2 + endpoint 6 non-empty scalars + routing_profile.name/mode 2 + network 5; the empty-valued scalars — hostname, username, password, custom_sni, client_random, lan_devices — are skipped by the `[ -n ]` guard, and the address/dns_upstream/direct lists are empty).
 
 - [ ] **Step 4: Consistency vs TT-11 field list**
 

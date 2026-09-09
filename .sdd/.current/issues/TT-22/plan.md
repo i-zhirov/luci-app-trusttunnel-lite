@@ -1,7 +1,7 @@
 # Implementation Plan: License flip (TT-22)
 
 - **Created**: 2026-09-09
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-22/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -424,9 +424,12 @@ read-through.
 
 - [ ] **Step 3: Verify the commit.**
       Run: `git show --stat HEAD` and `git log -1`
-      Expected: exactly the three files; the message documents the choice
-      and the process; this is the LAST reimplementation commit (per the
-      issue's note, no later file changes).
+      Expected: exactly the three files (only two when the chosen license
+      leaves `LICENSE` unchanged — e.g. the GPL-2.0-only / GPL-2.0-or-later
+      choices keep the current text, so the commit then touches only the
+      app Makefile and README); the message documents the choice and the
+      process; this is the LAST reimplementation commit (per the issue's
+      note, no later file changes).
 
 - [ ] **Step 4: Push / CI (post-commit).** The flip commit now exists, so
       push the branch / open the PR and run the `ci.yml` `tests` job.

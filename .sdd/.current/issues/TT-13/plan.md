@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-13/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -402,7 +402,10 @@ assert ids == base, 'msgid set/order mismatch vs baseline'
 assert len(ids) == 212, 'entry count changed (211 msgids + header)'
 ph = re.compile(r'%[sd]')
 for i, s in zip(ids, strs):
-    if '%' in i:
+    # Only check entries whose msgstr is already translated: during Tasks 2-5
+    # the not-yet-authored entries still have msgstr "" and must not fail the
+    # placeholder gate (it becomes fully green at Task 6/7).
+    if '%' in i and s:
         assert ph.findall(i) == ph.findall(s), 'placeholder mismatch: %r' % i
 print('CHECK PASS: msgid set identical to baseline, placeholders intact')
 EOF

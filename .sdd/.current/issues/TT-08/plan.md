@@ -1,7 +1,7 @@
 # Implementation Plan: TT-08 — hotplug route reattach
 
 - **Created**: 2026-09-08
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-08/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash

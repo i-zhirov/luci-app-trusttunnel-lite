@@ -1,7 +1,7 @@
 # Implementation Plan: README.md clean-room rewrite
 
 - **Created**: 2026-09-09
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-21/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -82,7 +82,7 @@ scope.
 | Generated `client.toml` (profile assigned, mode vpn): `vpn_mode = "general"`, `exclusions` from `routing_profile.bypass_rules`; (profile assigned, mode bypass): `vpn_mode = "selective"`, `exclusions` from `routing_profile.vpn_rules`; (nothing assigned or name mismatch): `vpn_mode = "general"`, `exclusions` from `domains.direct`; always `killswitch_enabled = false`, `change_system_dns = false`, empty `included_routes`/`excluded_routes` | `root/usr/libexec/trusttunnel/gen-config` | confirmed |
 | Update check: `https://api.github.com/repos/i-zhirov/trusttunnel-openwrt/releases/latest`, cache `/var/cache/trusttunnel/release.json`, TTL 21600 | `root/usr/share/rpcd/ucode/luci.trusttunnel` | confirmed |
 | Menu `admin/services/trusttunnel/{status,settings,diagnostics}` | `root/usr/share/luci/menu.d/luci-app-trusttunnel.json` | confirmed |
-| Status page (state verdict incl. the assigned profile, tun device, versions, client log); Diagnostics walks the chain with verdicts, plus `ping`/`probe`/`check_domain` tools | `htdocs/luci-static/resources/view/trusttunnel/{status,diagnostics}.js` | confirmed |
+| Status page (state verdict incl. the assigned profile in the Mode row, versions, client log — the current README's "client's tun device" clause is reproduced as the README's own wording; the view itself renders no device row, the device appears only in Diagnostics' Tunnel device check); Diagnostics walks the chain with verdicts, plus `ping`/`probe`/`check_domain` tools | `htdocs/luci-static/resources/view/trusttunnel/{status,diagnostics}.js` | confirmed |
 | Uninstall flags: `-y` (remove zone + settings, no prompts), `-c` (keep `/etc/config/trusttunnel`, no prompt) | `uninstall.sh` (`getopts "yc"`) | confirmed |
 | Uninstall order i18n → app → client in one call; zone prompt default yes; settings prompt default no; removes `/opt/trusttunnel_client` + caches; rpcd restart + LuCI cache clear; kernel leftovers check | `uninstall.sh` | confirmed |
 | Both repositories on GitHub Pages via Actions artifact deploy (no branch); apk index signed with `apk adbsign` (EC key), opkg feed signed with `usign`; release assets published via `softprops/action-gh-release`; manual `.apk`/`.ipk` downloads must be verified against the SHA-256 sums in the release notes | `.github/workflows/release.yml`, `README.md` caveats | confirmed |
@@ -305,7 +305,7 @@ rg -n 'hostname|username|password|address|dns_upstream|custom_sni|client_random|
 rg -n 'custom_sni|client_random|dns_upstream|routing_profile|vpn_rules|bypass_rules|main\.enabled|init\.d/trusttunnel' README.md
 ```
 
-Expected: every option in the example exists in the config defaults with the same spelling; the example round-trips through `uci set` / `uci add_list` / `uci add`.
+Expected: every scalar option in the example exists in the config defaults with the same spelling (the example's LIST options — `endpoint.address`, `endpoint.dns_upstream`, `routing_profile.vpn_rules`/`bypass_rules` — are empty lists in the defaults file with no `list` lines, so verify those against `uci-export`'s schema and `settings.js`'s field definitions instead); the example round-trips through `uci set` / `uci add_list` / `uci add`.
 
 - [ ] **Step 4: Run markdownlint**
 
@@ -321,7 +321,7 @@ Run: `markdownlint --disable MD013 README.md` Expected: no findings.
 
 - [ ] **Step 1: State the section's fact checks**
 
-LAN forwarding marked `0x9527` → table `880` → the client's tun device; the router's own traffic goes out directly by default (`include_router_traffic`); routing profiles decide, inside the client, what happens to a connection once it is in the tunnel — vpn mode tunnels everything except the bypass rules, bypass mode tunnels only the VPN rules; domains are matched by SNI, IPs and CIDRs by destination (the same mechanism the legacy flat list used, now with both halves of the selection); killswitch = blackhole (metric 1000) while the device is down; client-side killswitch disabled in the generated config (`killswitch_enabled = false`); exclusions are profile-based — in vpn mode they come from `routing_profile.bypass_rules`, in bypass mode from `routing_profile.vpn_rules` (the tunneled set), and from `domains.direct` when no profile is assigned; no DNS interception (`change_system_dns = false`); Status page (service state, the **assigned profile**, tun device, versions, client log) and Diagnostics (walks config → client → tun → routing → firewall → network with a verdict per check).
+LAN forwarding marked `0x9527` → table `880` → the client's tun device; the router's own traffic goes out directly by default (`include_router_traffic`); routing profiles decide, inside the client, what happens to a connection once it is in the tunnel — vpn mode tunnels everything except the bypass rules, bypass mode tunnels only the VPN rules; domains are matched by SNI, IPs and CIDRs by destination (the same mechanism the legacy flat list used, now with both halves of the selection); killswitch = blackhole (metric 1000) while the device is down; client-side killswitch disabled in the generated config (`killswitch_enabled = false`); exclusions are profile-based — in vpn mode they come from `routing_profile.bypass_rules`, in bypass mode from `routing_profile.vpn_rules` (the tunneled set), and from `domains.direct` when no profile is assigned; no DNS interception (`change_system_dns = false`); Status page (service state, the **assigned profile** in the Mode row, versions, client log — "client's tun device" is the current README's wording, reproduced as such) and Diagnostics (walks config → client → tun → routing → firewall → network with a verdict per check).
 
 - [ ] **Step 2: Draft the section**
 

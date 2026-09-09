@@ -1,7 +1,7 @@
 # Implementation Plan: TT-07 — uci-defaults (first-boot firewall setup)
 
 - **Created**: 2026-09-08
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-07/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash

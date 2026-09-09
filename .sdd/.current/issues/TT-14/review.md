@@ -4,19 +4,19 @@
 - **Model**: tokenguard/deepseek-v4-flash
 - **Issue**: `.sdd/.current/issues/TT-14/issue.md`
 - **Plan**: `.sdd/.current/issues/TT-14/plan.md`
-- **Verdict**: Revised
-- **Review attempt**: 1
+- **Verdict**: Approved
+- **Review attempt**: 2
 
 ## Per-Dimension Results
 
 | Dimension | Result | Findings |
 | --- | --- | --- |
-| Correctness | fail | 1 |
+| Correctness | pass | 2 |
 | Security | pass | 0 |
 | Performance | pass | 0 |
-| Maintainability | fail | 1 |
-| Architecture | fail | 1 |
-| Operational | fail | 1 |
+| Maintainability | pass | 1 |
+| Architecture | pass | 1 |
+| Operational | pass | 1 |
 
 The plan is **Approved** only when all six dimensions pass.
 Any `fail` makes the verdict **Rejected**.
@@ -60,5 +60,6 @@ None.
 
 ## Notes
 
-- Everything else in the embedded Makefile matches the current file byte-for-byte (version derivation, conffiles ordering, Build/Compile after include, SPDX header). AC1-AC3 coverage holds; the failure is AC4 and the golden architecture.
+- Re-review (attempt 2): all 5 prior findings verified Resolved (new depends split + negative greps, rebased-tree golden, rewritten precondition, explicit suite gate, 98 lines).
+- New on re-review: the stale "HEAD == c43e20a" pins were FIXED in the plan by the primary agent (the branch tip is fa45849, the planning docs commit on top of c43e20a; git describe yields v1.0.15-5-gfa45849; the docs commit touches no Makefile, so the golden build is unaffected).
 - On re-review, this report is updated in place.

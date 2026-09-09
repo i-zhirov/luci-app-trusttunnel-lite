@@ -1,6 +1,6 @@
 # Issue TT-07: uci-defaults (first-boot firewall setup)
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: none (independent of TT-02..TT-06; may run in parallel)
 - **Effort**: M

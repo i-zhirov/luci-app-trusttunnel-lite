@@ -1,6 +1,6 @@
 # Issue TT-02: records.sh accessor library
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-01
 - **Effort**: S

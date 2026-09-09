@@ -1,6 +1,6 @@
 # Issue TT-19: ci.yml workflow
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: none (independent; may run in parallel — but is the
   gate for every other issue)

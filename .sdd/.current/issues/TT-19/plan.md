@@ -1,7 +1,7 @@
 # Implementation Plan: TT-19 — ci.yml workflow (the continuous gate)
 
 - **Created**: 2026-09-09
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-19/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash

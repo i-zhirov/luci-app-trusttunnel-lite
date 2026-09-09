@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09 (revision addressing all review findings)
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-03/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -37,10 +37,8 @@ this plan is actualized to the rebased file:
   with the emitted options.
 - **Schema size is now 26 keys** — 2 main + 11 endpoint scalars +
   `endpoint.address` + `endpoint.dns_upstream` + 4 marker profile keys +
-  6 network + `domains.direct`. NOTE: issue.md says "Total schema: 25 keys"
-  — that is a typo in the contract text (the real parse of the current file
-  yields 26; the untouched oracle's ≥15 sanity threshold accepts both). This
-  plan pins **26** everywhere and flags the discrepancy for the caller.
+  6 network + `domains.direct` (issue.md's contract text agrees: "Total
+  schema: 26 keys"). This plan pins **26** everywhere.
 - Task 2's tripwire step: the schema parse must yield 26 keys, and the
   golden capture must include the profile-resolution cases (assigned
   profile, empty `routing_profile`, stale name) — the scratch scaffold
@@ -246,17 +244,22 @@ using it as the equivalence oracle is the PRD's own methodology (SC-003).
 ### 4. Fixtures as the shape reference (NOT byte-comparison targets)
 
 - `tests/fixtures/records/full.tsv` — 31 lines (28 data lines + 3 comment
-  lines); covers all 26 keys: repeated lines for `endpoint.address` (2),
-  `endpoint.dns_upstream` (2), `routing_profile.bypass_rules` (2); the
-  password value contains a double quote, a backslash, and an embedded TAB
-  (proves pass-through); no `network.lan_devices`, no `endpoint.certificate`;
-  the assigned profile is present (`endpoint.routing_profile Default` +
-  `routing_profile.*` block with `mode vpn`). It is records INPUT data and
-  is NOT byte-comparable with uci-export output: it contains comment lines
-  and its line order differs (the network block precedes the profile block,
-  while the script emits the profile block before the network block). Use it
-  only as the key-set/shape reference for the full config (which values must
-  be exercised, which keys must appear, list repetition, pass-through).
+  lines); its data-line key set is the 25 keys present in the file
+  (`network.lan_devices` is absent): repeated lines for `endpoint.address`
+  (2), `endpoint.dns_upstream` (2), `routing_profile.bypass_rules` (2);
+  the password value contains a double quote, a backslash, and an embedded
+  TAB (proves pass-through); no `network.lan_devices`, no
+  `endpoint.certificate`; the assigned profile is present
+  (`endpoint.routing_profile Default` + `routing_profile.*` block with
+  `mode vpn`). It is records INPUT data and is NOT byte-comparable with
+  uci-export output: it contains comment lines and its line order differs
+  (the network block precedes the profile block, while the script emits
+  the profile block before the network block). Use it only as the
+  key-set/shape reference for the full config (which values must be
+  exercised, which keys must appear, list repetition, pass-through) —
+  the coverage check is "the 25 keys present in full.tsv appear, no
+  foreign keys, the profile block is present", NOT equality with the
+  full 26-key schema (the golden-full.tsv raw output covers all 26).
 - `tests/fixtures/records/minimal.tsv` — 6 lines; used for the "only set
   keys are emitted" check.
 - `tests/fixtures/records/bypass.tsv` — bypass-mode profile shape
@@ -443,9 +446,13 @@ line order — they are NEVER `cmp`-compared byte-for-byte with the goldens.
 Use them only as a key-set/shape reference (e.g. compare sorted key sets
 via `awk -F'\t' '{print $1}' | sort -u`):
 
-- `golden-full.tsv` must contain exactly the 26-key set (sorted-key-set
-  equality with `full.tsv`'s data lines), the `routing_profile.*` block
-  present, and no `endpoint.certificate` / `network.lan_devices` lines;
+- `golden-full.tsv` must contain exactly the 26-key schema (the raw
+  output of the old script on the full scratch config), the
+  `routing_profile.*` block present, and no `endpoint.certificate` lines;
+  `full.tsv`'s data-line key set is a 25-key SUBSET of it (its
+  `network.lan_devices` is absent) — the fixture comparison checks that
+  the 25 fixture keys appear in the golden with no foreign keys, not
+  set-equality with the full 26;
   repeated list keys (address, dns_upstream, bypass_rules) and the
   pass-through password value must be visible in the shape.
 - `golden-empty.tsv` and `golden-stale.tsv` must contain the 22
@@ -616,9 +623,8 @@ suite green; no inherited expression remains in the tree.
   keyword (the 4 keys are carried by the marker line alone); adding
   `scalar` there would change the parsed key source and risk section-id
   leakage. Research §2 pins this.
-- **The issue contract's "25 keys" typo**: the real parse yields 26 keys;
-  this plan pins 26. The caller should fix the issue text; the plan does
-  not modify `issue.md`.
+- **The schema key count**: the real parse yields 26 keys; issue.md's
+  contract agrees ("Total schema: 26 keys"); this plan pins 26 everywhere.
 - **macOS has no `/lib/functions.sh` and no `uci`**: the golden capture
   depends on docker (alpine image) or a live router. If neither is
   available, Tasks 1 and 3 degrade to fixture-shape coverage only — still

@@ -1,7 +1,7 @@
 # Implementation Plan: TT-14 package Makefile
 
 - **Created**: 2026-09-08
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-14/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -10,7 +10,7 @@
 ## Actualization (rebase on main, 2026-09-09)
 
 The worktree was rebased onto `origin/main` (routing-profiles + system
-deps); HEAD is now `c43e20a` (was `1fdf82c` at v1.0.13). Both Makefiles
+deps); HEAD is now the branch tip `fa45849` — the planning docs commit on top of `c43e20a` (was `1fdf82c` at v1.0.13). Both Makefiles
 changed; the issue contract was updated:
 
 - **`luci-app-trusttunnel` LUCI_DEPENDS** is now
@@ -27,7 +27,7 @@ changed; the issue contract was updated:
   0 failed).
 - Task 3's static checks and Task 4's metadata byte-diff must use the
   NEW depends strings; the golden transcript (Task 1) is derived from a
-  LOCAL SDK BUILD of the REBASED tree (HEAD `c43e20a`, where `git
+  LOCAL SDK BUILD of the REBASED tree (HEAD `fa45849` = the docs commit on top of `c43e20a`, where `git
   describe --tags --abbrev=0` → `v1.0.15`) — the v1.0.13 release assets
   predate the rebase and cannot serve as the golden (Research §4).
 
@@ -42,7 +42,7 @@ kept), the conffiles block placed **before** `include luci.mk`, and the
 
 Verification is oracle-diff, not unit tests (a Makefile has none): the
 golden metadata oracle (control fields, conffiles, file lists with modes) is
-derived from a **local SDK build of the REBASED tree** (HEAD `c43e20a`,
+derived from a **local SDK build of the REBASED tree** (HEAD `fa45849`, on top of `c43e20a`,
 pre-rewrite Makefile) — the official v1.0.13 release assets predate the
 rebase and cannot serve as the golden (Research §4). Sequence: baseline
 capture + golden build → rewrite from the contract → cheap static checks
@@ -138,8 +138,9 @@ v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] 
 
 Verified behaviors:
 
-- **At this branch's HEAD** (`c43e20a`, rebased on main): `git describe
-  --tags --abbrev=0` → `v1.0.15` — HEAD is `v1.0.15-4-gc43e20a`; tags
+- **At this branch's HEAD** (`fa45849` — the planning docs commit on top of the
+  rebased `c43e20a`): `git describe --tags --abbrev=0` → `v1.0.15` — HEAD is
+  `v1.0.15-5-gfa45849`; tags
   `v1.0.14`/`v1.0.15` live on main and are now reachable, `v1.0.13` ==
   `1fdf82c` is an ancestor but not the nearest. sed strips the leading `v`
   → **`1.0.15`**. Every build at HEAD (the golden build, the SDK gate)
@@ -205,7 +206,8 @@ bytes, verified via the GitHub API 2026-09-08) were built at commit
 `1fdf82c` — the PRE-REBASE HEAD — from the OLD Makefile, which declared
 `LUCI_DEPENDS:=+trusttunnel-client +luci-base +kmod-tun +ip-full +curl
 +ca-bundle +ucode-mod-math` (no `+nftables`; `kmod-tun`/`ca-bundle`
-repeated in the app). The rebase (HEAD `c43e20a`) changed BOTH Makefiles:
+repeated in the app). The rebase (HEAD `c43e20a`, now the branch tip `fa45849`
+  plus the planning docs commit) changed BOTH Makefiles:
 the app's `LUCI_DEPENDS` is now `+trusttunnel-client +luci-base +ip-full
 +nftables +curl +ucode-mod-math`, and `trusttunnel-client` gained
 `DEPENDS:=+kmod-tun +ca-bundle`. The old assets' metadata (their `Depends`
@@ -213,7 +215,7 @@ list above all) therefore **cannot serve as the golden** — "all diffs
 empty" against them is unsatisfiable.
 
 The golden is instead derived from a **local SDK build of the current
-rebased tree**, i.e. the pre-rewrite Makefile at HEAD `c43e20a` (Task 1
+rebased tree**, i.e. the pre-rewrite Makefile at HEAD `fa45849` (Task 1
 builds it before Task 2 touches the file, using the gh-action-sdk docker
 recipe of Research §5). Its extracted metadata transcripts (control,
 conffiles, file lists with modes, `.PKGINFO`) become the golden oracle in
@@ -366,7 +368,7 @@ satisfiable and means exactly: the rewrite changed no metadata.
 | File | Action | Responsibility |
 | --- | --- | --- |
 | `packages/luci-app-trusttunnel/Makefile` | Rewrite | Re-expressed package metadata from the contract; new comment wording; conffiles before `include luci.mk`; `Build/Compile` chmod set after it; no inherited text (trailing `call BuildPackage` comment dropped) |
-| `.build-out/golden-22.03/`, `.build-out/golden-25.12/` (gitignored, ephemeral) | Create (outside tree) | Golden oracle: `.apk`/`.ipk` from a local SDK build of the CURRENT (pre-rewrite) rebased tree at HEAD `c43e20a` + extracted metadata transcripts; never committed |
+| `.build-out/golden-22.03/`, `.build-out/golden-25.12/` (gitignored, ephemeral) | Create (outside tree) | Golden oracle: `.apk`/`.ipk` from a local SDK build of the CURRENT (pre-rewrite) rebased tree at HEAD `fa45849` + extracted metadata transcripts; never committed |
 | `.build-out/sdk/` (gitignored, ephemeral) | Create (outside tree) | Local SDK build helper (action-image build + docker run) and the new built artifacts + transcripts; never committed |
 
 ## Tasks

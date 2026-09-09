@@ -1,6 +1,6 @@
 # Issue TT-09: rpcd ucode backend
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-06 (service lifecycle semantics)
 - **Effort**: L

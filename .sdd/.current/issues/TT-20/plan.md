@@ -1,7 +1,7 @@
 # Implementation Plan: release.yml workflow (TT-20)
 
 - **Created**: 2026-09-09
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-20/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -21,8 +21,8 @@ changes). `release.yml` changed; the issue contract was updated:
   each repo dir) → `site/apk/<arch>/index.md`. Jekyll renders all of
   them. Chunk 7 (site assembly) must be re-expressed around the markdown
   templates and the sed-substitution loops.
-- Verification jobs' comments changed (kmod-tun/ca-bundle/nftables
-  wording) — behavior identical.
+- Verification jobs' comments changed (dependency wording now "luci-base,
+  kmod-tun, ca-bundle, curl, ...") — behavior identical.
 - Everything else (build, build-client, publish-repo signing, release
   upload, Pages actions) unchanged.
 

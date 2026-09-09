@@ -1,6 +1,6 @@
 # Issue TT-12: diagnostics.js view
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-09
 - **Effort**: M–L

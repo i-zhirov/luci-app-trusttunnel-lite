@@ -1,6 +1,6 @@
 # Issue TT-18: install.sh
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-14 (package metadata the installer installs)
 - **Effort**: M–L

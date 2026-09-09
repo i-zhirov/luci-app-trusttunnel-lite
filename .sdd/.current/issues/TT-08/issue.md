@@ -1,6 +1,6 @@
 # Issue TT-08: hotplug route reattach
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-05 (calls `routing attach`)
 - **Effort**: S

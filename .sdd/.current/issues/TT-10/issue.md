@@ -1,6 +1,6 @@
 # Issue TT-10: status.js view
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-09
 - **Effort**: M

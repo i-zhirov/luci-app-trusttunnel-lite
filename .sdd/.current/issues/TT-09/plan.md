@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09 (revision per plan-review attempt 1)
-- **Status**: Draft
+- **Status**: Approved
 - **Issue**: `.sdd/.current/issues/TT-09/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -189,7 +189,7 @@ Run (capture mode, against the current file): `TT_CAPTURE=1 tests/test_backend_c
 
 Run the ci.yml "ucode module imports" grep loop (lines 110–133) against the current file — Expected: `every module function used is imported`.
 
-**Verification**: gate green on the current file; goldens committed (they are data — the behavioral oracle); `git status` shows only new test files + `.gitignore`. The goldens' contents must not be hand-edited later — any mismatch is a code bug.
+**Verification**: gate green on the current file; goldens committed (they are data — the behavioral oracle); `git status` shows only the new test files. The goldens' contents must not be hand-edited later — any mismatch is a code bug.
 
 ### [ ] Task 2: Helpers (chunk b)
 
@@ -200,7 +200,7 @@ Run the ci.yml "ucode module imports" grep loop (lines 110–133) against the cu
 
 - [ ] **Step 1: Write the helper unit assertions from the contract**
 
-In `harness.uc --helpers`, assert: `sh`/`sh_out` merge/redirect semantics via stub `printf` (code from `p.close()`, out strings); `shq` escaping (input `a'b c` → quoted form that a stub round-trips); `tmp_path` shape `/tmp/.tt-<prefix>-…` and non-collision over 100 calls; `write_secret_tmp` returns existing file with mode 0600 (via `stat`); `vercmp` matrix (`1.0.9` vs `1.0.10` → −1; `v1.0.10` vs `1.0.10-r1` → 0; `1.0.10-r1` vs `1.0.10-r2` → 0 after `-rN` strip — per contract both drop suffixes, so equal; `1.1.0` vs `1.0.99` → 1; `abc` vs `1.0.0` → 0 unparseable); `records`/`first` on a fixture TSV (repeated keys → arrays, tab-less lines skipped, missing key → `first` default); `uciget` via stub `uci -q get` (trimmed); `routing_status` on stub output (all four flags + `client device X`, and early-out all-false when the records file is absent); `parse_ping` on a full/partial summary (sent/received/loss rounding, min/avg/max, missing lines keep defaults loss 100 / nulls); `endpoint_host` on `host:443`, `[2001:db8::1]:443`, `2001:db8::1` (no port), plain `host`.
+In `harness.uc --helpers`, assert: `sh`/`sh_out` merge/redirect semantics via stub `printf` (code from `p.close()`, out strings); `shq` escaping (input `a'b c` → quoted form that a stub round-trips); `tmp_path` shape `/tmp/.tt-<prefix>-…` and non-collision over 100 calls; `write_secret_tmp` returns existing file with mode 0600 (via `stat`); `vercmp` matrix (`1.0.9` vs `1.0.10` → −1; `v1.0.10` vs `1.0.10-r1` → 0; `1.0.10-r1` vs `1.0.10-r2` → 0 after `-rN` strip — per contract both drop suffixes, so equal; `1.1.0` vs `1.0.99` → 1; `abc` vs `1.0.0` → −1: the unparseable side becomes `[0]` via the numeric-match fallback and loses to `[1,0,0]`); `records`/`first` on a fixture TSV (repeated keys → arrays, tab-less lines skipped, missing key → `first` default); `uciget` via stub `uci -q get` (trimmed); `routing_status` on stub output (all four flags + `client device X`, and early-out all-false when the records file is absent); `parse_ping` on a full/partial summary (sent/received/loss rounding, min/avg/max, missing lines keep defaults loss 100 / nulls); `endpoint_host` on `host:443`, `[2001:db8::1]:443`, `2001:db8::1` (no port), plain `host`.
 
 - [ ] **Step 2: Run the helper probe against the CURRENT file**
 
@@ -373,7 +373,7 @@ On the device: back up the current file (`cp /usr/share/rpcd/ucode/luci.trusttun
 
 - [ ] **Step 5: Repo hygiene + acceptance walk**
 
-Run: `git status --short` and `git diff --stat` — Expected: the backend file replaced in place; no `*.old`/`*.bak` copies; no other tracked files changed except the test files and `.gitignore`. Walk the five issue acceptance criteria: 9 methods re-expressed (harness green), ucode syntax gate (Step 2), module-import check (Step 2), response key sets byte-match (Steps 1/3/4), versions cache behavior matches (Task 5).
+Run: `git status --short` and `git diff --stat` — Expected: the backend file replaced in place; no `*.old`/`*.bak` copies; no other tracked files changed except the test files. Walk the five issue acceptance criteria: 9 methods re-expressed (harness green), ucode syntax gate (Step 2), module-import check (Step 2), response key sets byte-match (Steps 1/3/4), versions cache behavior matches (Task 5).
 
 **Verification**: all gates green; `git status` clean of stray files; acceptance criteria checked off in the issue.
 

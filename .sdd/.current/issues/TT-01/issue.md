@@ -1,6 +1,6 @@
 # Issue TT-01: Test harness and record fixtures
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: none
 - **Effort**: S

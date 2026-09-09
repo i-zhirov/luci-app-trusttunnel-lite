@@ -1,6 +1,6 @@
 # Issue TT-04: gen-config (client.toml generator)
 
-- **Status**: Planned
+- **Status**: Approved
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-02
 - **Effort**: S–M
@@ -93,8 +93,9 @@ program and must be byte-identical to today.
 ## How to verify
 
 1. `sh tests/run.sh` — `test_gen_config.sh` green.
-2. Golden diff script: capture old output for both fixtures (+ one PEM
-   case), run new, `diff` must be empty.
+2. Golden diff script: capture old output for all three fixtures, each
+   with and without a PEM file (six cases), run new, `diff` must be
+   empty.
 3. `shellcheck -s sh` clean.
 
 ## Notes

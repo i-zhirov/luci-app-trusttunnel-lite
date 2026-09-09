@@ -4,19 +4,19 @@
 - **Model**: tokenguard/deepseek-v4-flash
 - **Issue**: `.sdd/.current/issues/TT-05/issue.md`
 - **Plan**: `.sdd/.current/issues/TT-05/plan.md`
-- **Verdict**: Revised
-- **Review attempt**: 1
+- **Verdict**: Approved
+- **Review attempt**: 2
 
 ## Per-Dimension Results
 
 | Dimension | Result | Findings |
 | --- | --- | --- |
-| Correctness | fail | 3 |
+| Correctness | pass | 2 |
 | Security | pass | 0 |
 | Performance | pass | 0 |
-| Maintainability | fail | 1 |
+| Maintainability | pass | 2 |
 | Architecture | pass | 0 |
-| Operational | fail | 1 |
+| Operational | pass | 1 |
 
 The plan is **Approved** only when all six dimensions pass.
 Any `fail` makes the verdict **Rejected**.
@@ -70,5 +70,6 @@ None.
 
 ## Notes
 
-- Subcommand surface, dump byte shape, up/attach/detach/down/status semantics, exit codes, and the TT-02 dependency claim all verified 1:1 against the code. The routing script and test_routing.sh did NOT change on main (no actualization needed — confirmed via rebase delta).
+- Re-review (attempt 2): all 4 prior findings verified Resolved (TT_IP/TT_NFT literals pinned with a byte-exact grep gate, refreshed cross-check section with the corrected v4-fatal/v6-best-effort quote, tracked-only git-status expectation, real golden difference set).
+- New on re-review (informational): Task 3 Step 1's env bullet retains the stale justification "a rephrasing passes our own checks but breaks sh tests/run.sh" — after the Step 2 grep -Fq gate was added, that rephrasing would now fail the plan's own checks; the wording contradicts the gate it introduces, but the pinning and gate fully resolve the risk.
 - On re-review, this report is updated in place.
