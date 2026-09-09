@@ -1,6 +1,6 @@
 # Issue TT-04: gen-config (client.toml generator)
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-02
 - **Effort**: S–M

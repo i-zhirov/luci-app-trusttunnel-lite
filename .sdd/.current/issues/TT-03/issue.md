@@ -1,6 +1,6 @@
 # Issue TT-03: uci-export
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-02
 - **Effort**: S
