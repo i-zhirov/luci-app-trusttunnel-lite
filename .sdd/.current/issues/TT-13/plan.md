@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-13/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -284,7 +284,7 @@ No new repo files, no test framework files: verification is the `msgfmt` gates
 
 ## Tasks
 
-### [ ] Task 1: Baseline audit — pin the msgid set (dedup `Mode`, drop the 4 stale msgids)
+### [x] Task 1: Baseline audit — pin the msgid set (dedup `Mode`, drop the 4 stale msgids)
 
 **Files:**
 
@@ -293,7 +293,7 @@ No new repo files, no test framework files: verification is the `msgfmt` gates
 - Read-only: `packages/luci-app-trusttunnel/root/usr/share/luci/menu.d/luci-app-trusttunnel.json`
 - Create (temp): `/tmp/tt13_msgids.txt`, `/tmp/tt13_view_keys.txt`, `/tmp/tt13_old.po`
 
-- [ ] **Step 1: Write the audit probes**
+- [x] **Step 1: Write the audit probes**
 
 ```sh
 # 1a. msgids from the current .po, in file order, unescaped for comparison;
@@ -334,7 +334,7 @@ open('/tmp/tt13_view_keys.txt', 'w', encoding='utf-8').write('\n'.join(sorted(to
 EOF
 ```
 
-- [ ] **Step 2: Run the probes and record the baseline**
+- [x] **Step 2: Run the probes and record the baseline**
 
 Run: `python3` (snippets above) and:
 
@@ -352,7 +352,7 @@ msgids are already filtered by 1a. If TT-10/11/12 rewrites changed any `_()`
 key, this step reports it — stop and reconcile with the view issues before
 continuing.
 
-- [ ] **Step 3: Gate the current file (baseline defect)**
+- [x] **Step 3: Gate the current file (baseline defect)**
 
 Run:
 
@@ -368,7 +368,7 @@ count. This red state is the recorded baseline defect, caused by the
 duplicate `msgid "Mode"` (lines 37/607). It is resolved by the dedup in 1a:
 the skeleton in Task 2 is the first state that passes `msgfmt -c`.
 
-- [ ] **Step 4: Save the reference copy**
+- [x] **Step 4: Save the reference copy**
 
 Run: `cp packages/luci-app-trusttunnel/po/ru/trusttunnel.po /tmp/tt13_old.po`
 
@@ -381,14 +381,14 @@ header + `Status` + `Settings`; 4 stale dropped; 1 `Mode` deduplicated);
 artifacts `/tmp/tt13_msgids.txt` (212 lines), `/tmp/tt13_view_keys.txt`
 (209 keys), `/tmp/tt13_old.po` exist.
 
-### [ ] Task 2: Write the new .po skeleton (header + all 211 msgids, empty msgstrs)
+### [x] Task 2: Write the new .po skeleton (header + all 211 msgids, empty msgstrs)
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po` (skeleton only)
 - Temp: `/tmp/tt13_msgids.txt` (from Task 1)
 
-- [ ] **Step 1: Write the failing gate (target state)**
+- [x] **Step 1: Write the failing gate (target state)**
 
 ```sh
 cat > /tmp/tt13_check.py <<'EOF'
@@ -419,7 +419,7 @@ file has 5 extra entries — the duplicate `Mode` + 4 stale msgids) and
 encodes the target identity; the skeleton in Step 2 is what must make it
 pass, with its own failing state: `0 translated messages.`
 
-- [ ] **Step 2: Generate the skeleton**
+- [x] **Step 2: Generate the skeleton**
 
 ```sh
 python3 - <<'EOF'
@@ -443,7 +443,7 @@ pairs in the baseline order; exactly one `Mode` entry; the 4 stale msgids
 absent; the two quote-containing msgids appear as `\"`-escaped; UTF-8, no
 BOM.
 
-- [ ] **Step 3: Verify the skeleton**
+- [x] **Step 3: Verify the skeleton**
 
 Run:
 
@@ -464,18 +464,18 @@ header unchanged, `msgfmt -c` green (the inherited file's duplicate-`Mode`
 fatal error is gone). From this point the author works **only** from this
 skeleton + this plan; `/tmp/tt13_old.po` is off-limits for authoring.
 
-### [ ] Task 3: Re-translate page chrome + Status page legacy strings (42 entries)
+### [x] Task 3: Re-translate page chrome + Status page legacy strings (42 entries)
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 
-- [ ] **Step 1: Confirm the failing state**
+- [x] **Step 1: Confirm the failing state**
 
 Run: `msgfmt --statistics -o /dev/null packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 Expected: `0 translated messages.` (target by end of Task 6: 211).
 
-- [ ] **Step 2: Author the 42 entries**
+- [x] **Step 2: Author the 42 entries**
 
 Translate the following msgids (skeleton entries) into new natural Russian
 text with the same meaning. Sub-groups: (a) page chrome — modal, buttons,
@@ -542,7 +542,7 @@ exclusion list sent out directly; update states = unknown / not installed /
 no network and no cached result / stale cache shown / a newer release
 available / installed newer than latest / up to date.
 
-- [ ] **Step 3: Verify the task scope**
+- [x] **Step 3: Verify the task scope**
 
 Run:
 
@@ -574,18 +574,18 @@ this task's keys are preserved in order.
 
 **Verification**: gate green, no verbatim old text, no placeholder drift.
 
-### [ ] Task 4: Re-translate Settings page legacy strings (53 entries)
+### [x] Task 4: Re-translate Settings page legacy strings (53 entries)
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 
-- [ ] **Step 1: Confirm the failing state**
+- [x] **Step 1: Confirm the failing state**
 
 Run: `msgfmt --statistics -o /dev/null packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 Expected: `42 translated messages.`
 
-- [ ] **Step 2: Author the 53 entries**
+- [x] **Step 2: Author the 53 entries**
 
 Translate the following msgids (the `Settings` menu title + all settings-view
 legacy keys; includes the 4 shared keys owned here — `Server`, `Network`,
@@ -662,7 +662,7 @@ success notification). Preserve tokens: `tt://`, `host:port`, `[ipv6]:port`,
 `AdGuard DNS`, `mwan3`, `SQM`, `QUIC`, `UDP`, `TLS`, `DPI`, `MTU`,
 `PEM`, `CIDR`, `br-lan`, `lan`, `Save & Apply`.
 
-- [ ] **Step 3: Verify the task scope**
+- [x] **Step 3: Verify the task scope**
 
 Run: the same three commands as Task 3 Step 3 (`msgfmt -c`, `python3
 /tmp/tt13_check.py`, the no-copy snippet) plus:
@@ -679,18 +679,18 @@ diagnostics entries are still empty.
 (no `%`-placeholder msgids in this task, so the placeholder check is a no-op
 here).
 
-### [ ] Task 5: Re-translate Diagnostics page + backend strings (82 entries)
+### [x] Task 5: Re-translate Diagnostics page + backend strings (82 entries)
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 
-- [ ] **Step 1: Confirm the failing state**
+- [x] **Step 1: Confirm the failing state**
 
 Run: `msgfmt --statistics -o /dev/null packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 Expected: `95 translated messages.`
 
-- [ ] **Step 2: Author the 82 entries**
+- [x] **Step 2: Author the 82 entries**
 
 Translate the following msgids (all diagnostics-view keys incl. the `DIAG_TEXT`
 backend-string lookups). The 7 shared keys used by diagnostics (`Checking…`,
@@ -795,7 +795,7 @@ remediation hints (backend strings). Preserve tokens: `kmod-tun`, `install.sh`,
 `fw4`, `/etc/init.d/firewall reload`, `tun`, `nftables`, `LAN`, `Settings`,
 `Enable`, `Start`, `killswitch`, `%d`×4.
 
-- [ ] **Step 3: Verify the task scope**
+- [x] **Step 3: Verify the task scope**
 
 Run: the Task 3 Step 3 commands plus:
 
@@ -810,18 +810,18 @@ messages.` (42 + 53 + 82).
 translated, placeholder tokens preserved (the `checks passed: %d, …` entry is
 this task's only placeholder).
 
-### [ ] Task 6: Re-translate the 34 new profile/SNI/random strings (fourth group)
+### [x] Task 6: Re-translate the 34 new profile/SNI/random strings (fourth group)
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 
-- [ ] **Step 1: Confirm the failing state**
+- [x] **Step 1: Confirm the failing state**
 
 Run: `msgfmt --statistics -o /dev/null packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 Expected: `177 translated messages.`
 
-- [ ] **Step 2: Author the 34 entries**
+- [x] **Step 2: Author the 34 entries**
 
 Translate the following msgids (the 34 msgids added by the routing-profiles
 feature on main; the shared `Mode` is authored here as the single deduplicated
@@ -900,7 +900,7 @@ Meaning notes for fidelity (routing-profiles feature, TT-10):
   `IP:port`, `CIDR`, `abcdef`, `0a0b0c`, `0f0f0f`, `example.com`, `CDN`,
   `SNI`, `TLS`, `VPN`, `hex`, `Routing tab`, `Server tab`.
 
-- [ ] **Step 3: Verify the task scope**
+- [x] **Step 3: Verify the task scope**
 
 Run: the Task 3 Step 3 commands plus:
 
@@ -915,14 +915,14 @@ this task (two of them with a double `%s`) keep their tokens in order.
 **Verification**: gate green, no verbatim old text, all 211 entries
 translated, placeholder tokens preserved.
 
-### [ ] Task 7: Final verification + manual LuCI Russian pass
+### [x] Task 7: Final verification + manual LuCI Russian pass
 
 **Files:**
 
 - Verify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 - Temp: `/tmp/tt13_old.po`, `/tmp/tt13_msgids.txt` (from Task 1)
 
-- [ ] **Step 1: Run the full mechanical gate**
+- [x] **Step 1: Run the full mechanical gate**
 
 Run:
 
@@ -951,7 +951,7 @@ EOF
 Expected: `msgfmt -c` exit 0; `211 translated messages.`; `CHECK PASS`;
 `FINAL PASS … 0 verbatim msgstrs`.
 
-- [ ] **Step 2: Review the change as a diff**
+- [x] **Step 2: Review the change as a diff**
 
 Run:
 
@@ -969,7 +969,7 @@ entries (4 stale + the duplicated `Mode`), every other `msgid` line is
 unchanged (incl. the single retained `Mode`); `git status` shows exactly one
 modified file, no `*.old`/backup files anywhere (PRD rule).
 
-- [ ] **Step 3: Manual LuCI Russian pass**
+- [ ] **Step 3: Manual LuCI Russian pass** *(deferred — no device/LuCI dev server in this environment; a full catalog read-through for naturalness/consistency was done instead; the on-device checklist below remains for a device session)*
 
 On a device with the package installed (or the LuCI dev server), with
 `/etc/config/luci` language set to Russian, check every page:
@@ -1004,7 +1004,7 @@ On a device with the package installed (or the LuCI dev server), with
 
 Expected: every scenario fully translated, no raw keys, no meaning drift.
 
-- [ ] **Step 4: Optional SDK gate (stretch)**
+- [ ] **Step 4: Optional SDK gate (stretch)** *(deferred to CI — no OpenWrt SDK/docker image available here)*
 
 If an OpenWrt SDK (or the docker `openwrt/sdk` image) is available, build the
 package and confirm `luci-i18n-trusttunnel-ru` is produced and installs.

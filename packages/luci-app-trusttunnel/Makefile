@@ -1,91 +1,68 @@
 # SPDX-License-Identifier: GPL-2.0-only
+#
+# luci-app-trusttunnel: LuCI support for the TrustTunnel full-tunnel client.
+# Build metadata re-expressed from the package build contract; the license
+# line is unchanged until the license flip.
 include $(TOPDIR)/rules.mk
 
-# Lightweight fork of the original luci-app-trusttunnel
-# (NooBiToo/TrustTunnelOpenWrt): full-tunnel only, no domain lists, no
-# dnsmasq/nftset machinery.
 PKG_NAME:=luci-app-trusttunnel
-# The version is taken from the release tag at build time: a build sitting on
-# tag vX.Y.Z produces X.Y.Z (plain X.Y.Z on opkg, X.Y.Z-r1 on apk — the 22.03
-# luci.mk ignores PKG_RELEASE). Both package managers then see a strictly
-# higher version on every release and upgrade cleanly, and the status-page
-# update check (which compares the tag against the installed version) reports
-# "up to date" instead of a permanent "update available".
-#
-# A static PKG_VERSION was the defect: v1.0.10 and v1.0.11 both shipped 1.0.10,
-# so `apk upgrade`/`opkg upgrade` never delivered the new files and the check
-# never cleared. The fallback below is used only when the checkout is not on a
-# tag (local builds, workflow_dispatch re-deploys, a feed without .git): keep
-# it equal to the last released version. release.yml asserts that a tag build
-# actually carries the tag's version, so a regression fails the release.
+
+# Version from the release tag at build time: a build on tag vX.Y.Z ships
+# X.Y.Z, which both package managers see as strictly higher than the
+# previous release (apk names read X.Y.Z-r1, the 22.03 luci.mk ignores
+# PKG_RELEASE for ipk versions). The status page's update check compares
+# the release tag against the installed version, so a build that carries
+# its tag's version reports "up to date"; a stale static version made two
+# releases ship the same number and no upgrade ever delivered the new
+# files. `git describe` reports the nearest reachable tag, so commits
+# below a tag build with that tag's version; the fallback below applies
+# only when no tag is reachable (local builds, manual re-deploys, a feed
+# without .git). Keep the fallback equal to the last released version;
+# release.yml fails a tag build whose artifact does not carry the tag.
 PKG_VERSION:=$(strip $(shell v="$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')"; [ -n "$$v" ] && printf '%s' "$$v" || printf '%s' 1.0.13))
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0-only
 PKG_MAINTAINER:=TrustTunnelOpenWrt contributors
 
 LUCI_TITLE:=LuCI support for TrustTunnel (full tunnel)
-LUCI_DESCRIPTION:=Runs the TrustTunnel client on OpenWrt and routes LAN \
-	traffic through the tunnel with a killswitch and a LuCI interface.
-# trusttunnel-client is a hard dependency: the client binaries in
-# /opt/trusttunnel_client are what this package configures and runs. apk
-# and opkg pull it from the same repository automatically, which is what
-# makes the client update with `apk upgrade` / `opkg upgrade`.
-#
+LUCI_DESCRIPTION:=Runs the TrustTunnel client on OpenWrt and routes LAN traffic through the tunnel with a killswitch and a LuCI interface.
 # Every dependency below is used by THIS package's own files — nothing is
-# carried for the client's sake: kmod-tun and ca-bundle live on
-# trusttunnel-client (the binaries create the tun device and do TLS
-# against a CA bundle) and arrive here transitively. ip-full (`ip rule`/
-# `ip route` tables), nftables (`nft` is called directly by the routing
-# helper and the diagnostics — fw4 pulling it on stock images is not
-# enough), curl (update check, diagnostics) and ucode-mod-math are all
-# invoked by this package's files.
+# carried for the client's sake. +trusttunnel-client is a hard dependency
+# (this package configures and runs the client binaries in
+# /opt/trusttunnel_client; both package managers pull the client from the
+# same repository, which is what lets it update with `apk upgrade` /
+# `opkg upgrade`). kmod-tun and ca-bundle live on trusttunnel-client's own
+# DEPENDS (the binaries create the tun device and do TLS against a CA
+# bundle) and arrive here transitively — the app must NOT repeat them.
+# ip-full (`ip rule`/`ip route`), nftables (`nft` is called directly by the
+# routing helper and the diagnostics — fw4 pulling it on stock images is
+# not enough), curl (update check, diagnostics) and ucode-mod-math are
+# invoked by this package's own files.
 LUCI_DEPENDS:=+trusttunnel-client +luci-base +ip-full +nftables +curl +ucode-mod-math
-# Otherwise luci.mk would substitute the address of LuCI itself, and `apk info`
-# would send for support to the wrong place.
+# Without this override luci.mk would substitute the LuCI project's own
+# address, and package metadata would point support at the wrong place.
 LUCI_URL:=https://github.com/i-zhirov/trusttunnel-openwrt
 LUCI_PKGARCH:=all
 
-# Without this declaration a package update will OVERWRITE
-# /etc/config/trusttunnel with defaults, i.e. destroy the server address, the
-# password, the certificate and the selected lists, and disable the service.
-# Files under /etc/config do NOT become protected automatically. Verified on a
-# live OpenWrt: apk keeps a per-package list of protected files — for the stock
-# dnsmasq-full it is /lib/apk/packages/dnsmasq-full.conffiles, where
-# /etc/config/dhcp is listed together with its checksum.
-#
-# The block must come BEFORE `include luci.mk`, and this is not a matter of
-# style. The last line of luci.mk calls BuildPackage, which captures the list by
-# immediate assignment: `KEEP_$(1):=$(strip $(call Package/$(1)/conffiles))` in
-# include/package-pack.mk. include substitutes text in place, so the capture
-# happens before the parser reaches a declaration written afterwards — and the
-# list freezes empty. A declaration that looks present but does not work is
-# worse than its absence. The stock luci-app-amule and luci-app-alwaysonline do
-# the same.
+# The conffiles declaration must precede `include luci.mk`: luci.mk's last
+# line expands BuildPackage, and the pack stage freezes the conffiles list
+# with an immediate assignment at that moment. A declaration after the
+# include is parsed too late, the captured list stays empty, and a package
+# update would then overwrite /etc/config/trusttunnel with defaults —
+# destroying the endpoint settings, the certificate and the service state.
 define Package/luci-app-trusttunnel/conffiles
 /etc/config/trusttunnel
 endef
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
-# call BuildPackage - OpenWrt buildroot signature
-
-# Executable bits are set EXPLICITLY rather than taken from the repository.
-#
-# luci.mk copies the root/ directory with `cp -pR`, i.e. it keeps the
-# permissions of the source files. Development was done on Windows, where the
-# file system has no executable bit, so git recorded all scripts as 100644 —
-# and the init script and generators that cannot be run went into the built
-# .apk. On the router this looked like: the service "does not start" with NOT A
-# SINGLE line in the log, because procd cannot execute the file. There is
-# almost nothing to diagnose.
-#
-# The defect survived to a release because on the bench I uploaded files via
-# scp and did chmod +x by hand every time — my own habit was hiding it.
-#
-# The modes in the git index are fixed too, but they cannot be relied on alone:
-# they are lost when downloading a zip archive, when transferring through a
-# file system without permissions, and when working on Windows for anyone who
-# rebuilds the package.
+# Executable bits set explicitly rather than taken from the repository:
+# luci.mk copies root/ with `cp -pR`, so modes come from the source files,
+# and the git index is not a reliable carrier (bits are lost in zip
+# downloads, on permission-less file systems, and on Windows). Without
+# this block the built package would ship scripts that procd cannot start
+# — with no log line at all. records.sh is sourced with `.`, not executed,
+# so it stays 0644.
 define Build/Compile
 	chmod 0755 $(PKG_BUILD_DIR)/root/etc/init.d/trusttunnel
 	chmod 0755 $(PKG_BUILD_DIR)/root/etc/uci-defaults/40-luci-trusttunnel
@@ -93,6 +70,5 @@ define Build/Compile
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/gen-config
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/routing
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/uci-export
-	# records.sh is sourced with `.`, it does not need to be executable.
 	chmod 0644 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/records.sh
 endef
