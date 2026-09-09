@@ -235,7 +235,7 @@ them in the rewritten test via a temp file):
 
 ## Tasks
 
-### [ ] Task 1: Baseline capture and oracle snapshot
+### [x] Task 1: Baseline capture and oracle snapshot
 
 **Files:**
 
@@ -243,7 +243,7 @@ them in the rewritten test via a temp file):
 - Create (ephemeral, outside the tree): oracle copy of the current
   `records.sh`
 
-- [ ] **Step 1: Record the pre-change baseline**
+- [x] **Step 1: Record the pre-change baseline**
 
 Run: `sh tests/run.sh`
 
@@ -254,7 +254,7 @@ their exact counts after the rewrite: `test_deps.sh` 26,
 `test_init_reload.sh` 21, `test_records.sh` 12, `test_routing.sh` 40
 (26+47+5+29+21+12+40 = 180).
 
-- [ ] **Step 2: Snapshot the old library as the golden oracle**
+- [x] **Step 2: Snapshot the old library as the golden oracle**
 
 ```sh
 TT02_TMP="$(mktemp -d)"
@@ -272,13 +272,13 @@ transcripts and is deleted in Task 5 Step 2.
 **Verification**: baseline recorded in the task notes; oracle copy exists
 outside the tree; `git status` is clean (no tracked changes yet).
 
-### [ ] Task 2: Rewrite `tests/test_records.sh` from the contract
+### [x] Task 2: Rewrite `tests/test_records.sh` from the contract
 
 **Files:**
 
 - Modify: `tests/test_records.sh`
 
-- [ ] **Step 1: Write the new test text**
+- [x] **Step 1: Write the new test text**
 
 The file below is new expression written from the issue contract and the
 pinned behaviors in Research §1 (31 assertions; message strings are new
@@ -369,7 +369,7 @@ Note: do not assert a concrete exit code for the guard (bash exits 1, dash /
 busybox ash exit 2 — Research §1); the `_guard_ok` pattern above only asserts
 non-zero. Do not assert the shell's `file: line:` prefix (localized).
 
-- [ ] **Step 2: Run the rewritten test against the OLD implementation**
+- [x] **Step 2: Run the rewritten test against the OLD implementation**
 
 Run: `sh tests/test_records.sh`
 
@@ -381,13 +381,13 @@ implementation.
 
 **Verification**: 31/31 green against the untouched inherited library.
 
-### [ ] Task 3: Write the new `records.sh` from the contract
+### [x] Task 3: Write the new `records.sh` from the contract
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh`
 
-- [ ] **Step 1: Write the replacement from the contract only**
+- [x] **Step 1: Write the replacement from the contract only**
 
 CLEAN-ROOM: do NOT open the current `records.sh` or the Task 1 oracle copy
 while writing. Work from the issue's Contract section and the pinned
@@ -407,7 +407,7 @@ behavior table in Research §1. The file must:
   sourcing contract) — new wording only;
 - preserve the file mode 0644 (not executable) and the path.
 
-- [ ] **Step 2: Syntax and lint gates on the new file**
+- [x] **Step 2: Syntax and lint gates on the new file**
 
 ```sh
 sh -n packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh
@@ -423,13 +423,13 @@ version, mode is `100644` (`git status` shows no mode change), and no line
 of the new file matches the inherited implementation (self-check: the file
 was written from the contract, not by transformation).
 
-### [ ] Task 4: Prove the rewritten test against the NEW implementation
+### [x] Task 4: Prove the rewritten test against the NEW implementation
 
 **Files:**
 
 - Run: `tests/test_records.sh`
 
-- [ ] **Step 1: Run the rewritten test**
+- [x] **Step 1: Run the rewritten test**
 
 Run: `sh tests/test_records.sh`
 
@@ -439,14 +439,14 @@ Expected: PASS — the same 31 assertions green, `0 failed`.
 and new (Task 4) implementations — behavioral equivalence on the
 contract-covered surface.
 
-### [ ] Task 5: Golden byte-diff of old vs new accessor outputs
+### [x] Task 5: Golden byte-diff of old vs new accessor outputs
 
 **Files:**
 
 - Run (ephemeral, outside the tree): accessor matrix over both fixtures
   against the Task 1 oracle copy and the new library
 
-- [ ] **Step 1: Generate and compare outputs**
+- [x] **Step 1: Generate and compare outputs**
 
 Run the same deterministic accessor matrix against both libraries (new
 script, written for this task; `$ORACLE` and `$TT02_TMP` are the Task 1
@@ -490,7 +490,7 @@ diff -u "$TT02_TMP/golden.out" "$TT02_TMP/new.out"
 Expected: `diff` exits 0, no output — byte-identical transcripts on both
 fixtures (this is the issue's verification step 3).
 
-- [ ] **Step 2: Discard the oracle**
+- [x] **Step 2: Discard the oracle**
 
 Remove the whole Task 1 temp root after the diff passes (oracle copy plus
 the golden/new transcripts): `rm -rf "$TT02_TMP"`.
@@ -498,13 +498,13 @@ the golden/new transcripts): `rm -rf "$TT02_TMP"`.
 **Verification**: empty diff; oracle deleted; `git status` shows only the
 two intended modified files.
 
-### [ ] Task 6: Full suite, CI gates, and clean-tree check
+### [x] Task 6: Full suite, CI gates, and clean-tree check
 
 **Files:**
 
 - Run: `tests/run.sh`; CI-equivalent local gates; `git status`
 
-- [ ] **Step 1: Full suite**
+- [x] **Step 1: Full suite**
 
 Run: `sh tests/run.sh`
 
@@ -515,7 +515,7 @@ fork-written init tests pass unchanged (they exercise
 `uci-export`/`gen-config`/`routing` subprocesses, which load the new
 library).
 
-- [ ] **Step 2: CI-equivalent gates**
+- [x] **Step 2: CI-equivalent gates**
 
 ```sh
 sh -n packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/records.sh
@@ -528,7 +528,7 @@ Expected: syntax and shellcheck clean; `records.sh` mode `100644`
 (executable-bits CI list must stay untouched — the file is sourced, not
 executed).
 
-- [ ] **Step 3: Clean-tree check (PRD requirement)**
+- [x] **Step 3: Clean-tree check (PRD requirement)**
 
 Run: `git status` and `git diff --name-only`
 
