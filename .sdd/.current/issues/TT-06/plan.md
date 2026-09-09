@@ -265,30 +265,34 @@ covered.
 > expected and by design. From Task 7 on they must be green and must STAY
 > green through the remaining tasks.
 
-### [ ] Task 1: Baseline — record the oracle state before any change
+### [x] Task 1: Baseline — record the oracle state before any change
 
 **Files:**
 
 - Run: `tests/test_init_apply.sh`, `tests/test_init_reload.sh`
 
-- [ ] **Step 1: Run the oracle and the syntax gate**
+- [x] **Step 1: Run the oracle and the syntax gate**
   Run `sh tests/test_init_apply.sh` and `sh tests/test_init_reload.sh`, then
   `sh -n packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`.
   Expected: 29 + 21 assertions, 0 failed; `sh -n` clean. (Verified during
   planning: already green — record this in the issue as the baseline.)
-- [ ] **Step 2: Confirm the starting tree state**
+- [x] **Step 2: Confirm the starting tree state**
   `git status --short` — only `.sdd/` and `docs/` untracked; the init script
   must be unmodified and executable (`ls -l` shows `-rwxr-xr-x`).
 
 **Verification**: baseline results recorded; no files changed.
+(Actual: `git status --short` was empty — `.sdd/` and `docs/` are tracked in
+this worktree; init script `-rwxr-xr-x`. Full suite baseline: deps 26,
+gen_config 57, harness 5, init_apply 29, init_reload 21, records 31,
+routing 51 = 220, 0 failed.)
 
-### [ ] Task 2: Chunk 1 — file header, constants, abort_restart_cleanup
+### [x] Task 2: Chunk 1 — file header, constants, abort_restart_cleanup
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
   Header: `#!/bin/sh /etc/rc.common`, `USE_PROCD=1`, `START=95`, `STOP=10`.
   Constants: `LIBDIR=/usr/libexec/trusttunnel`, `OUTDIR=/var/etc/trusttunnel`,
   `RECORDS=$OUTDIR/settings.tsv`, `CLIENT=/opt/trusttunnel_client/trusttunnel_client`.
@@ -296,7 +300,7 @@ covered.
   the flag to `0`, then `routing down "$RECORDS"` when `$RECORDS` exists.
   Top level must remain side-effect-free (no `config_load`, no procd calls —
   the oracle sources the file).
-- [ ] **Step 2: Syntax and source smoke**
+- [x] **Step 2: Syntax and source smoke**
   `sh -n` clean; `sh -c '. ./packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel'`
   silent. Oracle tests: expected FAIL (`changed_keys`/`classify_change`/…
   not found) — by design until Task 7.
@@ -304,13 +308,13 @@ covered.
 **Verification**: `sh -n` clean; sourcing silent; oracle failure limited to
 "not found" of the not-yet-written functions.
 
-### [ ] Task 3: Chunk 2 — regenerate
+### [x] Task 3: Chunk 2 — regenerate
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write `regenerate()` from the contract**
+- [x] **Step 1: Write `regenerate()` from the contract**
   `umask 077`; `mkdir -p "$OUTDIR"`; `"$LIBDIR/uci-export" > "$RECORDS.new"`
   then `mv "$RECORDS.new" "$RECORDS"` — on export failure remove `.new` and
   return 1; read `uci -q get trusttunnel.endpoint.certificate` — when
@@ -321,19 +325,19 @@ covered.
 
   Ordering is contract-mandated: records first (atomic), then pem, then
   client.toml.
-- [ ] **Step 2: Syntax and oracle state**
+- [x] **Step 2: Syntax and oracle state**
   `sh -n` clean; oracle tests still FAIL by design (missing classifier).
 
 **Verification**: `sh -n` clean; chunk matches the contract's regenerate
 paragraph point by point.
 
-### [ ] Task 4: Chunk 3 — setup_trust_store, start_service, stop_service
+### [x] Task 4: Chunk 3 — setup_trust_store, start_service, stop_service
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write `setup_trust_store()` from the contract**
+- [x] **Step 1: Write `setup_trust_store()` from the contract**
   `config_load trusttunnel`; `config_get_bool _skipver endpoint
   skip_verification 0`; `config_get _pinned endpoint certificate`. When
   `_skipver` = `1` OR `_pinned` non-empty → return 0 (no trust store
@@ -343,7 +347,7 @@ paragraph point by point.
   directory exists), return 0. Neither exists → log the contract line
   `error: no CA bundle found; install ca-bundle, pin a certificate, or
   disable verification` (log line #3) and return 1.
-- [ ] **Step 2: Write `start_service()` from the contract**
+- [x] **Step 2: Write `start_service()` from the contract**
   `config_load trusttunnel`; `config_get_bool enabled main enabled 0` —
   when not `1`: log `disabled in configuration, not starting`, run
   `abort_restart_cleanup`, return 0. When `$CLIENT` not executable: log
@@ -360,10 +364,10 @@ paragraph point by point.
 
   Discrepancy #4: abort-cleanup runs on EVERY early exit, including the
   enabled=0 early return.
-- [ ] **Step 3: Write `stop_service()` from the contract**
+- [x] **Step 3: Write `stop_service()` from the contract**
   When `${_TT_KEEP_ROUTING:-0}` ≠ `1` AND `$RECORDS` exists →
   `"$LIBDIR/routing" down "$RECORDS"`. Always `return 0`.
-- [ ] **Step 4: Syntax and oracle state**
+- [x] **Step 4: Syntax and oracle state**
   `sh -n` clean; oracle tests still FAIL by design (classifier missing) —
   but `setup_trust_store`/`stop_service`/`abort_restart_cleanup` are now
   real, so the reload test's tail assertions will start exercising them
@@ -373,13 +377,13 @@ paragraph point by point.
 `abort_restart_cleanup`; `setup_trust_store` matches the contract (`-s`
 probe order, `SSL_CERT_DIR` rule, contract log line #3 on failure).
 
-### [ ] Task 5: Chunk 4 — wait_for_time and wait_for_wan
+### [x] Task 5: Chunk 4 — wait_for_time and wait_for_wan
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write the waiters from the contract**
+- [x] **Step 1: Write the waiters from the contract**
   `wait_for_time()`: floor = mtime of `$LIBDIR/gen-config` via
   `date -r "$LIBDIR/gen-config" +%s` with fallback `1750000000` when `date -r`
   fails; loop in 2 s steps up to 30 s while `date +%s` < floor; when still
@@ -388,19 +392,19 @@ probe order, `SSL_CERT_DIR` rule, contract log line #3 on failure).
   `wait_for_wan()`: loop in 1 s steps up to 30 s until
   `ip route show default` is non-empty; on timeout log
   `warning: no default route after 30s`; ALWAYS return 0.
-- [ ] **Step 2: Syntax and oracle state**
+- [x] **Step 2: Syntax and oracle state**
   `sh -n` clean; oracle tests still FAIL by design (classifier missing).
 
 **Verification**: `sh -n` clean; timing constants 30 s / 2 s / 1 s and the
 fallback floor match the contract.
 
-### [ ] Task 6: Chunk 5 — device helpers
+### [x] Task 6: Chunk 5 — device helpers
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write the helpers from the contract**
+- [x] **Step 1: Write the helpers from the contract**
   `max_ifindex()`: largest `ifindex` over `/sys/class/net/*` (missing/invalid
   entries skipped); print it.
   `new_client_devices <since>`: print one name per line for interfaces with
@@ -411,19 +415,19 @@ fallback floor match the contract.
   `new_client_devices`, `"$LIBDIR/routing" attach "$RECORDS" "$OUTDIR"
   "$_new"`; none found → return 0. Single attempt, no wait loop (the hotplug
   script is the main mechanism; this covers the already-existing-device edge).
-- [ ] **Step 2: Syntax and oracle state**
+- [x] **Step 2: Syntax and oracle state**
   `sh -n` clean; oracle tests still FAIL by design (classifier missing).
 
 **Verification**: `sh -n` clean; helper behavior matches the contract's
 sysfs/bitmark wording.
 
-### [ ] Task 7: Chunk 6 — classifier, apply_settings, restart override — ORACLE GOES GREEN
+### [x] Task 7: Chunk 6 — classifier, apply_settings, restart override — ORACLE GOES GREEN
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write the classifier from the contract + oracle**
+- [x] **Step 1: Write the classifier from the contract + oracle**
   `changed_keys <old> <new>`: occurrence-counting single-pass awk (repeated
   keys matter — lists), key = first tab field, output sorted unique.
   `change_class <key>`: explicit case table from Research §1 — INCLUDING
@@ -435,10 +439,10 @@ sysfs/bitmark wording.
   `class_rank`: noop 0, reload 1, restart 2, else 3.
   `class_max`: the class with the higher rank. `classify_change <old> <new>`:
   maximum class over all changed keys; no changes → `noop`.
-- [ ] **Step 2: Write `restart()` override and `reload_service()`**
+- [x] **Step 2: Write `restart()` override and `reload_service()`**
   `restart()`: `trap '' TERM`, then `stop "$@"`; `start "$@"`.
   `reload_service()`: call `apply_settings`.
-- [ ] **Step 3: Write `apply_settings()` from the contract + oracle**
+- [x] **Step 3: Write `apply_settings()` from the contract + oracle**
   1. Missing `$RECORDS` or `running` fails → `restart`, return its rc.
   2. `umask 077`; `"$LIBDIR/uci-export" > "$RECORDS.next"` — on failure
      remove `.next`, log `warning: settings export failed, applying the long
@@ -457,31 +461,35 @@ sysfs/bitmark wording.
      `*` (restart_full) → remove `.next`, plain `restart`.
      Must call `restart`/`regenerate`/`running`/`logger` BY NAME and read
      `$RECORDS`/`$OUTDIR`/`$LIBDIR` at call time (stub/override contract).
-- [ ] **Step 4: Run the oracle — the TDD pass moment**
+- [x] **Step 4: Run the oracle — the TDD pass moment**
   `sh tests/test_init_apply.sh` → 29 assertions, 0 failed.
   `sh tests/test_init_reload.sh` → 21 assertions, 0 failed.
   Then `sh -n`. Expected: all green.
+
+  (First pass of the chunk had 7/9 oracle failures: `cut -d '\t'` is a
+  two-character delimiter for BSD `cut` → "bad delimiter" on macOS. Fixed by
+  extracting the key inside awk via `split(p, a, FS)`; then 29 + 21, 0 failed.)
 
 **Verification**: both oracle tests green UNCHANGED; `sh -n` clean. This is
 the milestone the whole issue stands on — commit here if the flow commits
 incrementally.
 
-### [ ] Task 8: Chunk 7 — service_triggers, polish, full gates
+### [x] Task 8: Chunk 7 — service_triggers, polish, full gates
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel`
 
-- [ ] **Step 1: Write `service_triggers()` from the contract**
+- [x] **Step 1: Write `service_triggers()` from the contract**
   `procd_add_reload_trigger "trusttunnel"`;
   `procd_add_interface_trigger "interface.*.up" wan
   /etc/init.d/trusttunnel restart`.
-- [ ] **Step 2: Contract checklist pass over the whole file**
+- [x] **Step 2: Contract checklist pass over the whole file**
   Read the final file top to bottom against the issue's Contract section and
   the log-line table: every path, procd param, class mapping, log string,
   and the `100755` executable bit. No leftover helpers, no renamed
   functions, no `*.old`/backup files next to it.
-- [ ] **Step 3: Full verification**
+- [x] **Step 3: Full verification**
   `sh -n` — clean. Oracle tests — still green (29 + 21). `sh tests/run.sh` —
   full suite green (180 assertions today, incl. the oracle). shellcheck:
   `docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh
@@ -490,23 +498,31 @@ incrementally.
   `git status --short` — only the init script modified (plus the flow's own
   `.sdd/`, `docs/`); no old implementation retained.
 
+  (Actual: shellcheck needed four inline disables per project convention —
+  SC2034 for the rc.common-consumed variables, SC2154 ×2 for
+  config_get_bool-assigned vars, SC2119/SC2120 for the argument-less
+  `restart` override; all with reason comments. Result: shellcheck v0.11.0
+  clean. Note: `test_hotplug.sh`/`test_uci_defaults.sh` and the hotplug
+  script edits in `git status` belong to the concurrently running TT-07/TT-08
+  sessions, not this issue.)
+
 **Verification**: full suite green; shellcheck clean (or CI-pending);
 `git status` shows exactly one reimplemented file.
 
-### [ ] Task 9: Manual device checklist (router smoke test)
+### [x] Task 9: Manual device checklist (router smoke test)
 
 **Files:**
 
 - Run on a device via the release workflow's install flow (apk/opkg rootfs)
 
-- [ ] **Step 1: Lifecycle**
+- [x] **Step 1: Lifecycle**
   `uci set trusttunnel.main.enabled=1`, start: procd instance `trusttunnel`
   running (`/etc/init.d/trusttunnel status`), pidfile
   `/var/run/trusttunnel.pid` exists, `client.toml`/`settings.tsv` present and
   mode 600/077-clean, tunnel route attached; stop: `routing down` ran,
   instance gone; restart: clean cycle; kill the client process → respawn
   within the `3600 5 0` window.
-- [ ] **Step 2: Reload classification via UCI**
+- [x] **Step 2: Reload classification via UCI**
   `network.lan_devices` edit + Save & Apply → NO client restart, log
   `settings applied without restarting the client`, route re-attached;
   `endpoint.hostname` edit → client restart WITHOUT routing teardown
@@ -514,11 +530,11 @@ incrementally.
   `mode`/`vpn_rules`/`bypass_rules`) or switching it
   (`endpoint.routing_profile`) → client restart via restart-keep-routing;
   `network.table` edit → full restart with real teardown.
-- [ ] **Step 3: Hotplug reattach**
+- [x] **Step 3: Hotplug reattach**
   Restart the client (or recreate its tun): the hotplug handler reattaches
   the route; `attach_client_device` covers the already-existing-device edge
   (service restart over a live client — no bogus "device not created" log).
-- [ ] **Step 4: Log/state audit**
+- [x] **Step 4: Log/state audit**
   All 11 log lines appear exactly as specified under the right conditions;
   no unexpected error lines; boot with `main.enabled=0` logs
   `disabled in configuration, not starting` and leaves routing untouched.
@@ -527,6 +543,15 @@ incrementally.
 between the device and the contract is reported (and per PRD, NOT fixed in
 this effort unless it is a reimplementation defect).
 
+(No router device is attached to the implementation environment, so the
+checklist was run as far as possible in the `openwrt/rootfs:x86-64-25.12.0`
+container, substituting TT-05's rootfs-smoke approach — see the
+Implementation notes below. Device-only items remain pending for the caller:
+a real procd instance (`status`, live pidfile, respawn `3600 5 0` window),
+real UCI integration via `config_load` against `/etc/config/trusttunnel`,
+the real clock/WAN waiters against a router's clock and network, and the
+hotplug reattach over a live client.)
+
 ## Post-conditions
 
 - `sh tests/run.sh` green with the two oracle tests UNCHANGED.
@@ -534,3 +559,61 @@ this effort unless it is a reimplementation defect).
 - `git status` shows the init script replaced in place, no old file kept.
 - No line of the new file is a copy of the inherited script's expression;
   the implementation is traceable to the issue contract + oracle tests only.
+
+## Implementation notes (2026-09-09, executed by sdd-coder)
+
+All nine tasks completed; final file is 353 lines, mode `100755`.
+
+**Host verification (macOS):**
+- `sh tests/test_init_apply.sh` — 29 assertions, 0 failed.
+- `sh tests/test_init_reload.sh` — 21 assertions, 0 failed.
+- `sh -n` — clean. `shellcheck v0.11.0 -s sh` (docker) — clean (four inline
+  disables with reason comments: SC2034 rc.common variables; SC2154 ×2
+  config_get_bool-assigned; SC2119/SC2120 for the argument-less `restart`).
+- Full suite: deps 26, gen_config 57, harness 5, init_apply 29,
+  init_reload 21, records 31, routing 51 = 220, 0 failed at baseline; the
+  concurrent TT-08 session added test_hotplug.sh (29) — green too. The
+  concurrent TT-07 session's `test_uci_defaults.sh` fails in this host
+  environment on its `/.docker-visible-probe` read-only check — unrelated
+  to this issue (that test is untracked, in flux).
+
+**Rootfs smoke (substitutes the device checklist where possible, per
+TT-05's approach; `openwrt/rootfs:x86-64-25.12.0`, busybox ash):**
+- `sh -n` clean; both oracle tests green under busybox (29 + 21) — the
+  classifier's awk works on busybox.
+- Full suite under busybox: green except one TT-03 gen-config assertion
+  ("quote and backslash are escaped, tabs cut the value") — a busybox-only
+  escaping fixture difference in an already-accepted issue; out of scope.
+- Bounded lifecycle smoke (procd/UCI stubbed, everything else real):
+  43 checks PASS — disabled early return + log #1; missing client log #2;
+  pinned-cert/skip-verification path emits NO env clause; CA-bundle path
+  emits env SSL_CERT_FILE (+SSL_CERT_DIR); procd surface (instance
+  `trusttunnel`, command `-c client.toml`, respawn `3600 5 0`, stdout/stderr
+  1, pidfile `/var/run/trusttunnel.pid`); `routing up` args; settings.tsv +
+  client.toml created, client.toml mode 600; regenerate failure → log #6 +
+  rc 1; routing-up failure → log #7 + rc 1; missing CA bundle → log #3 +
+  rc 1; stop_service/abort_restart_cleanup teardown semantics; restart
+  override stop→start; service_triggers wiring.
+
+**Deviations from the plan:**
+- `changed_keys` key extraction moved inside awk (`split(p, a, FS)`) instead
+  of a `cut -d '\t'` pipe: BSD `cut` rejects the two-character `\t`
+  delimiter ("bad delimiter" — first Task 7 run had 7/9 oracle failures).
+  Behavior unchanged; sorted-unique key list preserved.
+- Shellcheck on the init script needed the four inline disables above (the
+  CI gate does not list init.d; run locally per plan Task 8 Step 3).
+- Task 9 device steps were executed via the rootfs smoke + oracle coverage;
+  the device-only remainder (real procd lifecycle, real UCI, real waiters,
+  hotplug reattach) is explicitly left for the caller.
+- `git status` at baseline was clean (`.sdd/`/`docs/` are tracked in this
+  worktree, contrary to the plan's "untracked" expectation); the current
+  tree additionally carries the concurrent TT-07/TT-08 session's files
+  (hotplug script, `test_hotplug.sh`, `test_uci_defaults.sh`, their plan
+  updates) — untouched by this issue.
+
+**Clean-room confirmation:** the inherited init.d source was never read;
+the implementation was written from the issue contract, this plan, and the
+two fork-written oracle tests only. The inherited file was exercised solely
+through the oracle tests (baseline) before replacement. No line of the new
+file is a copy of the inherited expression; no spec-internal IDs appear in
+the shipped code or its comments.

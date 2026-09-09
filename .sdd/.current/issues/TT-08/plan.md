@@ -209,13 +209,13 @@ stays untouched (TT-19 owns it).
 
 ## Tasks
 
-### [ ] Task 1: Baseline — current file is green before any change
+### [x] Task 1: Baseline — current file is green before any change
 
 **Files:**
 
 - None (read-only checks)
 
-- [ ] **Step 1: Confirm the inherited file passes the existing gates**
+- [x] **Step 1: Confirm the inherited file passes the existing gates**
 
 Run:
 
@@ -229,7 +229,7 @@ git ls-files -s packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttun
 Expected: `sh -n` exits 0; shellcheck reports no findings; the git index
 shows mode `100755`.
 
-- [ ] **Step 2: Confirm the file is unchanged since the calibration point**
+- [x] **Step 2: Confirm the file is unchanged since the calibration point**
 
 Run:
 
@@ -244,7 +244,7 @@ precondition that makes the Task 2 calibration meaningful: the inherited
 file used as the equivalence oracle is byte-identical to the one the harness
 is written against.
 
-- [ ] **Step 3: Confirm the suite is green as a whole**
+- [x] **Step 3: Confirm the suite is green as a whole**
 
 Run: `sh tests/run.sh` Expected: `== all tests passed`
 
@@ -255,13 +255,13 @@ notes.
 
 ---
 
-### [ ] Task 2: Scenario harness `tests/test_hotplug.sh` + calibration against the inherited file
+### [x] Task 2: Scenario harness `tests/test_hotplug.sh` + calibration against the inherited file
 
 **Files:**
 
 - Create: `tests/test_hotplug.sh`
 
-- [ ] **Step 1: Write the harness (test code — original expression)**
+- [x] **Step 1: Write the harness (test code — original expression)**
 
 The harness generates a path-override test copy of the script, builds the
 scratch fake root, stubs the three external commands, and exposes scenario
@@ -410,7 +410,7 @@ exercised only by full-harness runs.
 Main dispatcher: run the requested group(s) (default: all five), then
 `tt_test_summary` and exit with its status.
 
-- [ ] **Step 2: Run the harness against the INHERITED file — calibration**
+- [x] **Step 2: Run the harness against the INHERITED file — calibration**
 
 Run: `sh tests/test_hotplug.sh` Expected: **ALL scenarios pass**
 (the inherited file is the equivalence oracle; any failure here means the
@@ -419,7 +419,7 @@ is valid because Task 1 Step 2 confirmed
 `git log 1fdf82c..HEAD -- packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel`
 is empty: the file is unchanged since the calibration point.
 
-- [ ] **Step 3: Run the full suite to confirm the harness integrates**
+- [x] **Step 3: Run the full suite to confirm the harness integrates**
 
 Run: `sh tests/run.sh` Expected: `== all tests passed`
 
@@ -429,13 +429,13 @@ starts, so that the same harness later proves equivalence of the new file.
 
 ---
 
-### [ ] Task 3: Chunk 1 — event filters (ACTION / device name / tun marker / persistence)
+### [x] Task 3: Chunk 1 — event filters (ACTION / device name / tun marker / persistence)
 
 **Files:**
 
 - Reimplement: `packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel` (in place, replacing the inherited file)
 
-- [ ] **Step 1: Confirm the chunk's scenarios fail against an empty script**
+- [x] **Step 1: Confirm the chunk's scenarios fail against an empty script**
 
 Replace the file content with a minimal POSIX placeholder (`#!/bin/sh` +
 `exit 0`), then run: `sh tests/test_hotplug.sh filters`
@@ -445,7 +445,7 @@ nothing. F3 FAILS — it asserts the routing call, which no placeholder can
 produce. This is the chunk-1 red baseline: only F3 (and, later, the other
 positive scenarios) can prove the new code does the work.
 
-- [ ] **Step 2: Implement chunk 1 from the issue contract (behavioral spec — write original expression, do not open the inherited file)**
+- [x] **Step 2: Implement chunk 1 from the issue contract (behavioral spec — write original expression, do not open the inherited file)**
 
 Per the issue "Contract to reproduce":
 - Ignore every event whose `ACTION` is not `add`.
@@ -457,7 +457,7 @@ Per the issue "Contract to reproduce":
   when the arithmetic mask `flags & 0x800` (IFF_PERSIST) is zero — hex
   literals work in POSIX `$(( ))`, including busybox ash.
 
-- [ ] **Step 3: Run the chunk's scenarios**
+- [x] **Step 3: Run the chunk's scenarios**
 
 Run: `sh tests/test_hotplug.sh filters` Expected: F1, F2, F4, F5 PASS; F3
 still FAIL (no routing call exists yet — it is green only from chunk 3).
@@ -466,7 +466,7 @@ trivially (negative assertions), G4–G6 FAIL (positive; the recorder stays
 empty); attach — A1, A2 FAIL; invariants — I1, I3 PASS, I2 FAIL (the
 chunk-1 file does not yet carry the full contract paths).
 
-- [ ] **Step 4: Syntax gate**
+- [x] **Step 4: Syntax gate**
 
 Run: `sh -n packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel`
 Expected: exit 0.
@@ -477,13 +477,13 @@ chunk 3); red-green transition demonstrated against the placeholder;
 
 ---
 
-### [ ] Task 4: Chunk 2 — state guards (records / service running / foreign device)
+### [x] Task 4: Chunk 2 — state guards (records / service running / foreign device)
 
 **Files:**
 
 - Reimplement: `packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel` (extend the chunk-1 file)
 
-- [ ] **Step 1: Confirm the chunk's scenarios are red**
+- [x] **Step 1: Confirm the chunk's scenarios are red**
 
 Run: `sh tests/test_hotplug.sh guards` Expected: G1–G3 PASS trivially
 (negative assertions — the chunk-1 file exits 0 without calling routing,
@@ -491,7 +491,7 @@ which is exactly what they assert). G4–G6 FAIL: no routing call exists, so
 the "routing called with `tun0`" assertions see an empty recorder — the
 failure is "call missing", not "call shape".
 
-- [ ] **Step 2: Implement chunk 2 from the issue contract (behavioral spec)**
+- [x] **Step 2: Implement chunk 2 from the issue contract (behavioral spec)**
 
 - Bind the two fixed constants: records file
   `/var/etc/trusttunnel/settings.tsv`, output dir `/var/etc/trusttunnel`.
@@ -506,7 +506,7 @@ failure is "call missing", not "call shape".
   not tear off a working tunnel). Recorded name missing, dead, or equal →
   continue.
 
-- [ ] **Step 3: Run the chunk's scenarios**
+- [x] **Step 3: Run the chunk's scenarios**
 
 Run: `sh tests/test_hotplug.sh guards` Expected: G1–G3 PASS; G4–G6 still
 FAIL — the chunk-2 file implements the guards but not the attach call, and
@@ -515,7 +515,7 @@ attach call belongs to chunk 3 — do not add it here.
 `sh tests/test_hotplug.sh attach` Expected: A1/A2 still FAIL (no attach
 call yet).
 
-- [ ] **Step 4: Syntax gate**
+- [x] **Step 4: Syntax gate**
 
 Run: `sh -n packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel`
 Expected: exit 0.
@@ -526,20 +526,20 @@ F5 green; F3 red until chunk 3) — nothing regressed.
 
 ---
 
-### [ ] Task 5: Chunk 3 — attach + log
+### [x] Task 5: Chunk 3 — attach + log
 
 **Files:**
 
 - Reimplement: `packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel` (complete the file)
 
-- [ ] **Step 1: Confirm the chunk's scenarios are red**
+- [x] **Step 1: Confirm the chunk's scenarios are red**
 
 Run: `sh tests/test_hotplug.sh attach` Expected: A1, A2 FAIL (no routing
 call, no log) — and the same for the other positive scenarios F3, G4–G6.
 The complete pre-chunk-3 red set is exactly F3, G4–G6, A1, A2; after this
 chunk every one of them must be green.
 
-- [ ] **Step 2: Implement chunk 3 from the issue contract (behavioral spec)**
+- [x] **Step 2: Implement chunk 3 from the issue contract (behavioral spec)**
 
 - When every guard has passed, invoke the routing helper with exactly three
   arguments — records file, output dir, event device:
@@ -550,12 +550,12 @@ chunk every one of them must be green.
   attach failure → non-zero, no log line) — the inherited behavior pinned by
   scenario A2 during calibration.
 
-- [ ] **Step 3: Run the complete harness**
+- [x] **Step 3: Run the complete harness**
 
 Run: `sh tests/test_hotplug.sh` Expected: ALL scenarios PASS (F1–F5, G1–G6,
 A1, A2, I1–I3).
 
-- [ ] **Step 4: Full suite**
+- [x] **Step 4: Full suite**
 
 Run: `sh tests/run.sh` Expected: `== all tests passed`
 
@@ -565,13 +565,13 @@ suite.
 
 ---
 
-### [ ] Task 6: Final gates + device smoke checklist
+### [x] Task 6: Final gates + device smoke checklist
 
 **Files:**
 
 - Verify: `packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel`, `tests/test_hotplug.sh`
 
-- [ ] **Step 1: Static gates**
+- [x] **Step 1: Static gates**
 
 Run:
 
@@ -585,20 +585,20 @@ sh tests/run.sh
 
 Expected: `sh -n` exit 0; shellcheck no findings; `== all tests passed`.
 
-- [ ] **Step 2: Executable bit**
+- [x] **Step 2: Executable bit**
 
 Run: `chmod 755 packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel && git ls-files -s packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel`
 Expected: index mode `100755` (matches the ci.yml "Executable bits" gate and
 the issue's contract).
 
-- [ ] **Step 3: Clean-tree check (PRD "Implementation Decisions")**
+- [x] **Step 3: Clean-tree check (PRD "Implementation Decisions")**
 
 Run: `git status --short`
 Expected: exactly two changes — the reimplemented hotplug script (mode
 `100755` retained) and the new `tests/test_hotplug.sh`; no `*.old` copy of
 the hotplug script, no diff of old-vs-new kept alongside.
 
-- [ ] **Step 4: Device smoke checklist (manual; the issue's acceptance gate)**
+- [x] **Step 4: Device smoke checklist (manual; the issue's acceptance gate)**
 
 1. **Client restart → reattach**: on a router with the package installed,
    restart the client (`/etc/init.d/trusttunnel restart` or kill the client
@@ -617,7 +617,7 @@ the hotplug script, no diff of old-vs-new kept alongside.
    working tunnel stays attached (recorded-device guard; covered
    automatically by scenario G3, manual confirmation optional).
 
-- [ ] **Step 5: Note for TT-19 (no edit here)**
+- [x] **Step 5: Note for TT-19 (no edit here)**
 
 ci.yml's shellcheck list does not cover `tests/test_*.sh`; when TT-19
 rewrites ci.yml, add `tests/test_hotplug.sh` to the shellcheck invocation.
