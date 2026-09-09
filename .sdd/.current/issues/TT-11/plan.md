@@ -354,26 +354,26 @@ Scratch files live under `tests/zz_tt11_*` (do not match the `tests/test_*.sh` r
 
 ## Tasks
 
-### [ ] Task 1: Capture the current baseline (gates, key list, contract probe)
+### [x] Task 1: Capture the current baseline (gates, key list, contract probe)
 
 **Files:**
 
 - Read-only: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`, `.github/workflows/ci.yml`
 - Create: `tests/zz_tt11_keys_baseline.txt`, `tests/zz_tt11_view_probe.js`
 
-- [ ] **Step 1: Run both CI JS gates on the current file and record that they pass**
+- [x] **Step 1: Run both CI JS gates on the current file and record that they pass**
 
 Run the exact "JavaScript syntax" and "LuCI module requires" commands from `.github/workflows/ci.yml` (the `node -e '...vm.Script...'` one-liner over `view/trusttunnel/*.js`, and the `mods="ui dom rpc uci form view poll fs network validation"` grep loop). Capture the output to `/tmp/tt11-gates-before.txt`.
 
 Expected: both exit 0; every view file prints `ok:`; the requires step prints "every LuCI module used is declared". This is the green baseline the new file must reproduce.
 
-- [ ] **Step 2: Extract the current translation-key list into the baseline file**
+- [x] **Step 2: Extract the current translation-key list into the baseline file**
 
 Run a node one-liner that reads `settings.js`, matches every `_('...')` string literal with the regex `/_\(\x27((?:[^\x27\\]|\\.)*)\x27\)/g` (the `\x27` form avoids quote-escaping problems; the escaped-apostrophe form `\\.` is REQUIRED — the key "Route the router's own traffic too" is written `_('Route the router\'s own traffic too')` and a naive `[^']*` match would silently miss it), UNESCAPES each capture (`\\(.)` → `$1` — required so the escaped-apostrophe key dedups to its plain form), sorts the unique strings, and writes them one per line to `tests/zz_tt11_keys_baseline.txt`.
 
 Expected: exactly 79 lines (80 matches, 79 unique — the verified count of the rebased file: the pre-rebase 56-key contract lost 4 keys and gained 27), matching the 79-key contract list in this plan's Contracts section (spot-check several, incl. the escaped-apostrophe key).
 
-- [ ] **Step 3: Write the contract probe and prove it is green against the current file**
+- [x] **Step 3: Write the contract probe and prove it is green against the current file**
 
 Write `tests/zz_tt11_view_probe.js` (new test text — a plain node script, no LuCI dependencies) that takes a view file path as argv and asserts, printing `ok:`/`FAIL:` with a group tag per assertion and exiting 1 on any FAIL:
 
@@ -389,117 +389,117 @@ Run: `node tests/zz_tt11_view_probe.js packages/luci-app-trusttunnel/htdocs/luci
 
 Expected: every assertion `ok:`, exit 0 — the probe encodes today's behavior (the equivalence oracle for all later tasks).
 
-- [ ] **Step 4: Negative control — the probe can fail**
+- [x] **Step 4: Negative control — the probe can fail**
 
 Temporarily corrupt one assertion in the probe (e.g. expect a wrong widget type for `mtu`). Run it against the current file — Expected: exit 1, that one assertion `FAIL:`. Restore the probe, re-run — Expected: exit 0.
 
 **Verification**: `/tmp/tt11-gates-before.txt` shows both gates green on the inherited file; `tests/zz_tt11_keys_baseline.txt` holds exactly the 79 contract keys; the probe is green on the inherited file and proven able to fail. The baseline is the comparison target for every later task.
 
-### [ ] Task 2: Re-express the scaffold — requires, RPC declaration, load, tabbed Map with the four sections
+### [x] Task 2: Re-express the scaffold — requires, RPC declaration, load, tabbed Map with the four sections
 
 **Files:**
 
 - Rewrite (in place): `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`
 - Use: `tests/zz_tt11_view_probe.js`
 
-- [ ] **Step 1: Replace the file content with the new scaffold (write the failing state)**
+- [x] **Step 1: Replace the file content with the new scaffold (write the failing state)**
 
 Overwrite `settings.js` with your own expression implementing only: `'use strict';`, the five `'require view'; 'require form'; 'require uci'; 'require rpc'; 'require ui';` directives, the `callImport` `rpc.declare` for `import_config`, and `return view.extend({ load: function(){ return uci.load('trusttunnel'); }, render: function(data){ ... } })` where `render` builds `new form.Map('trusttunnel', _('TrustTunnel'))`, sets `m.tabbed = true`, declares the four sections in order — `form.NamedSection` `main` with `_('General')`, `form.NamedSection` `endpoint` with `_('Server')`, `form.Section` `'routing_profile'` with `_('Routing profiles')` plus `s.addremove = true; s.anonymous = true; s.sortable = true;` and its description, and `form.NamedSection` `network` with `_('Network')` and its description — and returns `m.render()`. No options, no `handleImport` yet. Comments, if any, are your own words stating the tabbed-page and routing-profile mechanics.
 
-- [ ] **Step 2: Run the probe — expected RED on the unimplemented chunks**
+- [x] **Step 2: Run the probe — expected RED on the unimplemented chunks**
 
 Run: `node tests/zz_tt11_view_probe.js packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`
 
 Expected: exit 1; `scaffold` group assertions `ok:`; all `general`/`server`/`routing`/`network`/`import`/`keys` assertions `FAIL:` (options and the flow are not implemented yet). This is the red state for this chunk.
 
-- [ ] **Step 3: Run both CI gates on the new file**
+- [x] **Step 3: Run both CI gates on the new file**
 
 Run the "JavaScript syntax" and "LuCI module requires" commands from ci.yml.
 
 Expected: both exit 0. The requires gate passes even though `ui` is not called yet (the gate only flags modules that ARE called but not declared — keep the `'require ui'` line from the start so the import task cannot forget it).
 
-- [ ] **Step 4: Verify the chunk is complete**
+- [x] **Step 4: Verify the chunk is complete**
 
 Re-run the probe — Expected: `scaffold` group still fully green, every other group still `FAIL:` (deliberate), exit 1. Run the gates again — Expected: green.
 
 **Verification**: the new skeleton passes both CI gates; the probe confirms the scaffold contract (four sections in order incl. the `form.Section` routing_profile with addremove/anonymous/sortable, map title, `tabbed`, `load`, RPC declaration, requires, absence of domains/Exclusions) while all field assertions are still red — the red state for the next chunks is established.
 
-### [ ] Task 3: Re-express the General and Server tabs (all 15 rows, incl. the three new fields)
+### [x] Task 3: Re-express the General and Server tabs (all 15 rows, incl. the three new fields)
 
 **Files:**
 
 - Rewrite (in place): `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`
 - Use: `tests/zz_tt11_view_probe.js`
 
-- [ ] **Step 1: Confirm the red state for this chunk**
+- [x] **Step 1: Confirm the red state for this chunk**
 
 Run the probe — Expected: `general` and `server` groups `FAIL:` (fields absent), others unchanged.
 
-- [ ] **Step 2: Implement the General and Server options**
+- [x] **Step 2: Implement the General and Server options**
 
 Add to the existing sections, in new expression, exactly the options of Entities "Section `main`" and "Section `endpoint`": the `enabled` Flag (`rmempty=false`, description), the `log_level` ListValue (literal labels), the `_import` Button FIRST in the Server section (title/description/`inputtitle`/`inputstyle`/`onclick` via `ui.createHandlerFn(this, 'handleImport')` — the method itself comes in Task 5), then `address`, `hostname`, `username`, `password` (all three `rmempty=false`; `password=true`), `protocol` (literal labels), `anti_dpi`, `post_quantum` (`default='1'`), `custom_sni` (placeholder `example.com`, `optional=true`, the lowercase-first hostname-shape validator), `client_random` (placeholder `0a0b0c/0f0f0f`, `optional=true`, the length/split/hex/even/mask-length validator), `routing_profile` (ListValue: `''` → `_('None — everything through the tunnel')` first; the `.name` values of `data.trusttunnel['routing_profile'] || []`; then the stored value via the UNGUARDED `data.trusttunnel.endpoint.routing_profile` read when it names a deleted profile — reproduce the unguarded expression exactly), `has_ipv6` (`default='1'`), `skip_verification`, `certificate` (`rows=6`, `optional=true`), `dns_upstream` with its placeholder and the 8 presets exactly as listed. All titles/descriptions are the `_()` strings from the Contracts key list; the six Cloudflare/Quad9/AdGuard preset labels and `HTTP/2`/`HTTP/3 (QUIC)`/`info`/`debug`/`trace` stay raw literals.
 
-- [ ] **Step 3: Run the probe — expected GREEN on this chunk**
+- [x] **Step 3: Run the probe — expected GREEN on this chunk**
 
 Run the probe — Expected: `general` and `server` groups fully `ok:` (incl. the `routing_profile` population and the pinned unguarded read); `routing`, `network`, `import` groups still `FAIL:`; `keys` still `FAIL:` (the new file's keys are a subset of the 79 until Tasks 4–5 land); exit 1 overall.
 
-- [ ] **Step 4: Run both CI gates**
+- [x] **Step 4: Run both CI gates**
 
 Expected: both exit 0 (the `ui.createHandlerFn` call in the `onclick` now exercises the `ui` require — the gate confirms it is declared).
 
 **Verification**: probe `general`+`server` groups green (widgets, order, defaults, `rmempty`, datatypes, placeholders, validators, all 8 presets with exact values/labels, routing_profile population), gates green; remaining groups still red.
 
-### [ ] Task 4: Re-express the Routing and Network tabs (profile section + validators)
+### [x] Task 4: Re-express the Routing and Network tabs (profile section + validators)
 
 **Files:**
 
 - Rewrite (in place): `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`
 - Use: `tests/zz_tt11_view_probe.js`
 
-- [ ] **Step 1: Confirm the red state for this chunk**
+- [x] **Step 1: Confirm the red state for this chunk**
 
 Run the probe — Expected: `routing` and `network` groups `FAIL:`, others as before.
 
-- [ ] **Step 2: Implement the Routing and Network options**
+- [x] **Step 2: Implement the Routing and Network options**
 
 Add to the existing sections, in new expression, exactly the options of Entities "Section `routing_profile`" and "Section `network`": the profile `name` (Value, `optional=false`, empty → `_('Name is required')`, the uniqueness scan against `data.trusttunnel['routing_profile'] || []` with the `secs[i]['.name'] !== section_id` self-exclusion → `_('Another profile already has this name')`), `mode` (ListValue with the two `_()` labels, `default='vpn'`, `rmempty=false`), `vpn_rules` (placeholder `telegram.org`) and `bypass_rules` (placeholder `bank.example`) both assigning the ONE shared `validateRule` function implementing the Contracts semantics (empty→true; lowercase; `*:port`→true; strip one `*.`; loose `[0-9a-f:.\[\]/]+`→true; hostname regex→true; rejection string); and the six network options with `mtu`'s `datatype 'range(576,9000)'` + `default '1350'`, `lan_devices`'s `placeholder 'br-lan'` + `optional=true`, `blackhole_on_down` `default '1'`, `include_router_traffic` (no default), and `fwmark` + `table` with their exact `validate` semantics from Contracts (both return `true` on empty; `table` keeps `datatype 'uinteger'` AND its validator; `fwmark` has no datatype). Do not "improve" the loose `validateRule` regex — reproduce the pinned semantics byte-for-byte in behavior. Do not render a `domains` section or a `direct` field.
 
-- [ ] **Step 3: Run the probe — expected GREEN on this chunk**
+- [x] **Step 3: Run the probe — expected GREEN on this chunk**
 
 Expected: `routing` and `network` groups fully `ok:` (including the `validateRule` regexes, the `*:port` handling, the name-uniqueness scan, and the fwmark/table validators with their rejection strings); `import` group still `FAIL:`; `keys` group still `FAIL:` (the Routing/Network keys are present now, but the import-flow keys are still missing); exit 1 overall.
 
-- [ ] **Step 4: Run both CI gates**
+- [x] **Step 4: Run both CI gates**
 
 Expected: both exit 0.
 
 **Verification**: probe `routing`+`network` groups green (widgets, order, defaults, datatypes, validator regex sequences and messages, shared validateRule), gates green; only `import` and `keys` groups remain red.
 
-### [ ] Task 5: Re-express the import flow (`handleImport` + modal, 12 guarded sets)
+### [x] Task 5: Re-express the import flow (`handleImport` + modal, 12 guarded sets)
 
 **Files:**
 
 - Rewrite (in place): `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js`
 - Use: `tests/zz_tt11_view_probe.js`
 
-- [ ] **Step 1: Confirm the red state for this chunk**
+- [x] **Step 1: Confirm the red state for this chunk**
 
 Run the probe — Expected: `import` group `FAIL:` (`handleImport` absent), `keys` group `FAIL:` (the import strings missing).
 
-- [ ] **Step 2: Implement `handleImport` and the modal**
+- [x] **Step 2: Implement `handleImport` and the modal**
 
 Add a `handleImport` member to `view.extend` implementing the Contracts "Import modal flow" exactly: `ui.showModal(_('Import endpoint configuration'), [ ... ])` with the paragraph, the `rows: 14` textarea (`style:'width:100%'`, placeholder key), the `Cancel` button (`class 'btn'`, `click: ui.hideModal`, `_('Cancel')`) and the `Import` button (`class 'cbi-button cbi-button-positive'`, click via `ui.createHandlerFn(this, function(){ ... })`, `_('Import')`); inside the handler: `callImport(ta.value)`; `res.error` → danger notification and stop; the TWELVE guarded `uci.set` calls with their exact guard forms (truthy for `hostname`/`username`/`password`/`certificate`/`custom_sni`/`client_random`/`protocol`; `!= null` for `anti_dpi`/`has_ipv6`/`skip_verification`; `res.addresses && res.addresses.length` → `address`; `res.dns_upstreams && res.dns_upstreams.length` → `dns_upstream`); `uci.save()` then `ui.hideModal()`, the `'info'` notification with `_('Imported. Review the fields and press Save & Apply.')`, and `window.setTimeout(function(){ location.reload(); }, 800)`; `.catch(function(e){ ui.addNotification(null, E('p', {}, e.message || String(e)), 'danger'); })`. The `onclick` wired in Task 3 now resolves to the real method.
 
-- [ ] **Step 3: Run the probe — expected FIRST FULL GREEN**
+- [x] **Step 3: Run the probe — expected FIRST FULL GREEN**
 
 Run the probe — Expected: every group including `import` and `keys` fully `ok:`, exit 0. This is the first complete pass of the whole contract against the new file.
 
-- [ ] **Step 4: Run both CI gates**
+- [x] **Step 4: Run both CI gates**
 
 Expected: both exit 0 (`ui`, `rpc`, `uci`, `form`, `view` all now called and declared).
 
 **Verification**: full probe green — the new file satisfies every pinned contract fact and its `_()` key set equals the inherited file's 79 keys; both CI gates green.
 
-### [ ] Task 6: Final verification — equivalence, gates with negative controls, manual LuCI checklist, clean tree
+### [x] Task 6: Final verification — equivalence, gates with negative controls, manual LuCI checklist, clean tree
 
 **Files:**
 
@@ -507,13 +507,13 @@ Expected: both exit 0 (`ui`, `rpc`, `uci`, `form`, `view` all now called and dec
 - Delete: `tests/zz_tt11_view_probe.js`, `tests/zz_tt11_keys_baseline.txt`
 - Read-only: `.github/workflows/ci.yml`, `po/ru/trusttunnel.po`, `menu.d/` and `acl.d/` JSONs
 
-- [ ] **Step 1: Re-run the full probe and both gates**
+- [x] **Step 1: Re-run the full probe and both gates**
 
 Run: `node tests/zz_tt11_view_probe.js packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/settings.js` — Expected: exit 0, every assertion `ok:`.
 
 Run both ci.yml JS gates — Expected: both exit 0. Also run `python3 -c "import json,sys; json.load(open(sys.argv[1]))"` on the two JSON files (menu/acl) and `git diff --stat` to confirm only `settings.js` changed among package files.
 
-- [ ] **Step 2: Negative controls — prove the gates check THIS file**
+- [x] **Step 2: Negative controls — prove the gates check THIS file**
 
 Sabotage 1: remove the `'require ui';` line from the new file. Run the requires gate — Expected: exit 1, `::error` naming `ui` (this is exactly the failure class the gate exists for). Restore the line.
 
@@ -522,6 +522,12 @@ Sabotage 2: introduce a syntax error (e.g. add a line `let x = ;`). Run the synt
 Re-run both gates — Expected: both exit 0.
 
 - [ ] **Step 3: Manual LuCI checklist (on a device/rootfs with TT-09's backend; document results)**
+
+> **Status (2026-09-09, implementation run)**: PENDING a device pass. No router/rootfs
+> was available in this run, and TT-09's rewritten backend is still Draft, so the
+> import flow items (5–6) cannot be exercised end-to-end yet. All eight checklist
+> items above are recorded for the device pass and must be executed before the
+> issue is closed.
 
 Run the checklist below, noting pass/fail per item:
 
@@ -536,7 +542,7 @@ Run the checklist below, noting pass/fail per item:
 
 Record the results (e.g. in the issue or a comment); if no device is available, state that this step is pending a device pass — it is the acceptance criterion "manual LuCI pass" and must be executed before the issue is closed.
 
-- [ ] **Step 4: Key-list and clean-tree/clean-room check**
+- [x] **Step 4: Key-list and clean-tree/clean-room check**
 
 Run the key extraction of Task 1 Step 2 against the NEW file and diff against `tests/zz_tt11_keys_baseline.txt` — Expected: identical 79 keys (the probe already asserts this; this step is the visible diff). Then delete both scratch files and run `git status --porcelain` — Expected: only `packages/.../settings.js` among package files (plus the `.sdd/` spec files); NO `*.old` files, NO `tests/zz_tt11_*` left. Finally review `git diff` of `settings.js` — the diff old-vs-new is the clean-room review: confirm the new text is independent expression (no verbatim inherited lines, no inherited comment text), per the PRD's per-issue `git status` rule.
 
