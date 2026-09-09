@@ -1,6 +1,6 @@
 # Issue TT-20: release.yml workflow
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-14 (package build), TT-18 (installer parity),
   TT-19 (CI conventions)

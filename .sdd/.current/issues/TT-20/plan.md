@@ -1,7 +1,7 @@
 # Implementation Plan: release.yml workflow (TT-20)
 
 - **Created**: 2026-09-09
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-20/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -362,7 +362,7 @@ SDK/rootfs images are untouched.
 
 ## Tasks
 
-### [ ] Task 1: Baseline — validation state, contract checklist, reference copy
+### [x] Task 1: Baseline — validation state, contract checklist, reference copy
 
 **Files:**
 
@@ -370,33 +370,33 @@ SDK/rootfs images are untouched.
 - Read: `.sdd/.current/issues/TT-20/issue.md` (contract)
 - Read: `.sdd/.current/issues/TT-18/issue.md` (install.sh parity the verify steps mirror)
 
-- [ ] **Step 1: Record the inherited file's validation baseline**
+- [x] **Step 1: Record the inherited file's validation baseline**
 
 Run: `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release.yml")'` Expected: exit 0 (parses)
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0 with exactly the two known info-level findings (SC2086 in the apk assemble step, SC2016 in the opkg assemble step)
 Run: `git ls-files -s .github/workflows/release.yml` Expected: mode `100644`
 
-- [ ] **Step 2: Verify the matrix facts programmatically**
+- [x] **Step 2: Verify the matrix facts programmatically**
 
 Run a ruby/python one-liner over the inherited YAML that asserts: build matrix = `25.12.5/apk` + `22.03.7/ipk`; build-client apk arch count = 20; ipk arch count = 19; ipk list == apk list minus `aarch64_cortex-a76`. Expected: all true (verified 2026-09-09; re-check before starting).
 
-- [ ] **Step 3: Build the contract checklist**
+- [x] **Step 3: Build the contract checklist**
 
 Transcribe the job-by-job table from Research (contract items 1–15 + D1–D12) into a working checklist (scratch file in the OS temp dir, NOT in the repo). Each chunk task below ticks its rows. Also copy the pin inventory (actions, image digests, secrets, artifact names) and the layout contract into the same scratch file.
 
-- [ ] **Step 4: Preserve the reference copy outside the repo**
+- [x] **Step 4: Preserve the reference copy outside the repo**
 
 Copy the inherited file to the OS temp dir (e.g. `/var/folders/6x/s23gvzh933v4ml_5ybc_tydh0000gp/T/opencode/release.yml.baseline`). It is only for fact re-checking during the rewrite; it never enters the repo and is deleted in Task 9.
 
 **Verification**: baseline checks green and recorded; matrix facts re-verified; scratch checklist + pin inventory + reference copy exist; `git status` shows no changes beyond `.sdd/`/`docs/`.
 
-### [ ] Task 2: Chunk 1 — workflow skeleton + build job
+### [x] Task 2: Chunk 1 — workflow skeleton + build job
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (top of file: name, triggers, permissions; then the `build` job with its full step sequence)
 
-- [ ] **Step 1: Write the chunk from the contract (no YAML copied)**
+- [x] **Step 1: Write the chunk from the contract (no YAML copied)**
 
 Write fresh expression for: workflow name; triggers = tag pushes `v*` + `workflow_dispatch`; permissions = `contents: write`, `pages: write`, `id-token: write` (with a new comment explaining the 403 failure mode and the pages/id-token need — own words). Then the `build` job on `ubuntu-latest`, matrix `fail-fast: false` with the two rows (`25.12.5`/`apk`, `22.03.7`/`ipk`), and these steps in order:
 
@@ -408,29 +408,29 @@ Write fresh expression for: workflow name; triggers = tag pushes `v*` + `workflo
 6. Upload `package-<version>` from `dist/*` (`actions/upload-artifact@v7`).
 7. Upload `build-logs-<version>` from `out/logs/`, `if: failure()`, `if-no-files-found: ignore`.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/release.yml")'` Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no NEW findings (the partial file now contains only this job; the two inherited info-level findings are gone with the inherited text — good)
 Expected: every action ref (`actions/checkout@v7`, `openwrt/gh-action-sdk@v7`, `actions/upload-artifact@v7`) spelled exactly as in the pin inventory.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Against the scratch checklist: triggers, permissions, matrix rows, env values (FEEDNAME/FEED_DIR/ARTIFACTS_DIR/PACKAGES), collect patterns, assertion pattern + skip condition, artifact names, log-upload condition — all match items 1–5, D2, D3, D7, D8.
 
-- [ ] **Step 4: Negative control on the tooling (once)**
+- [x] **Step 4: Negative control on the tooling (once)**
 
 Temporarily change one pin in the chunk (e.g., `openwrt/gh-action-sdk@v6`); Expected: actionlint FAILS on the unknown version (or the checklist tick fails); revert the break. This proves the validation catches drift; do not repeat in later chunks.
 
 **Verification**: YAML parses; actionlint clean (no new findings); checklist rows 1–5 green; negative control proved the tooling catches a broken pin; file remains a parseable partial workflow.
 
-### [ ] Task 3: Chunk 2 — build-client job
+### [x] Task 3: Chunk 2 — build-client job
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add the `build-client` job after `build`)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 Job on `ubuntu-latest`, matrix `fail-fast: false` with the 20 apk rows and 19 ipk rows (exact arch strings from the Research matrix data; ipk = apk minus `aarch64_cortex-a76`; own-words comment about the vendor family-binary mapping and apk's byte-exact arch matching vs opkg's merged-feed leniency). Steps in order:
 
@@ -441,25 +441,25 @@ Job on `ubuntu-latest`, matrix `fail-fast: false` with the 20 apk rows and 19 ip
 5. Upload `package-client-<version>-<arch>` from `dist/*`.
 6. Upload `build-logs-client-<version>-<arch>` from `out/logs/`, `if: failure()`, `if-no-files-found: ignore`.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings
 Expected: 39 matrix rows total (20 + 19); action refs exactly `openwrt/gh-action-sdk@v7`, `actions/upload-artifact@v7`.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Matrix counts + exact arch strings, env values, apk rename pattern (`$(basename "$f" .apk)-<arch>.apk`), `ARCH-<arch>` marker content (single line = arch), ipk plain copy, artifact names — items 6, 7, D7.
 
 **Verification**: YAML parses; actionlint clean; matrix programmatically re-countable from the NEW file (20/19, ipk = apk − aarch64_cortex-a76); checklist rows 6–7 green.
 
-### [ ] Task 4: Chunk 3 — publish-repo skeleton, artifact downloads, apk repository half
+### [x] Task 4: Chunk 3 — publish-repo skeleton, artifact downloads, apk repository half
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add `publish-repo` with `needs: [build, build-client]`, its `if:` gate, and the download + apk-assemble steps)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 Job gate: `if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'`; `needs: [build, build-client]`; `runs-on: ubuntu-latest`; own-words header comment about the Pages-hosted repos (why the repositories live on Pages, not in release assets: the i18n `~` version vs release-asset naming, and byte-identical file serving). Steps:
 
@@ -468,93 +468,93 @@ Job gate: `if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'wor
 3. Download pattern `package-client-25.12.5-*` → `staging/apk-pkgs` with `merge-multiple: true`; `package-client-22.03.7-*` → `staging/opkg-pkgs` with `merge-multiple: true`.
 4. Assemble and index the apk repositories (env `SIGN_KEY: ${{ secrets.TT_APK_SIGN_KEY }}`), fresh expression implementing exactly: `mkdir -p staging/apk`; copy `key-build.pub` → `staging/apk/`; write the secret to `key-build.sec` (`printf '%s\n' "$SIGN_KEY" > key-build.sec`); iterate the `staging/apk-pkgs/ARCH-*` markers (no marker → error "no client artifacts for any architecture"); for each arch: create `staging/apk/<arch>`, copy both luci apks in, locate the client apk `trusttunnel-client-*-<arch>.apk` (missing → error), copy it under the metadata name (`$(basename "$f" -<arch>.apk).apk` — arch suffix stripped because apk reconstructs file names from metadata); then one `docker run --rm` with `-v "$PWD/staging/apk:/repo"` and `-v "$PWD/key-build.sec:/key-build.sec"` over the EXACT image `alpine:edge@sha256:266f29255458134745f2bf588cb23ed1ed1768b96ff2580a05d70a8aba59e145` running the per-dir loop: `(cd <dir> && apk mkndx --output packages.adb --allow-untrusted *.apk && apk adbsign --allow-untrusted --sign-key /key-build.sec packages.adb) || exit 1`; finally list the produced `packages.adb` files.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings (if the `sh -c` payload triggers SC2086 again, re-express the quoting so the lint is clean WITHOUT changing the command's behavior — e.g., quote the glob or use `sh -c` with an explicit inner shell that the linter does not flag; the inherited finding is not a license to keep it)
 Expected: secret name `TT_APK_SIGN_KEY`; image digest byte-identical to the pin inventory; download patterns/names exact.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Gate + needs, the four download steps with exact names/patterns/merge flags, key copy, marker-driven arch loop (no second matrix copy), client rename rule, mkndx/adbsign command with `--allow-untrusted` (D1), pinned digest (D4), secret name — items 8, 9, D1, D4.
 
 **Verification**: YAML parses; actionlint clean (SC2086 eliminated or knowingly identical); every apk-half pin matches the inventory; the chunk's behavior is a faithful re-expression of item 9 (verified by reading the new text against the checklist, not against the inherited file).
 
-### [ ] Task 5: Chunk 4 — publish-repo opkg repository half
+### [x] Task 5: Chunk 4 — publish-repo opkg repository half
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add the opkg assemble+sign step after the apk step)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 One step, env `SIGN_KEY: ${{ secrets.TT_OPKG_SIGN_KEY }}`, fresh expression implementing exactly: `mkdir -p staging/opkg`; copy `staging/luci-ipk/*.ipk` and `staging/opkg-pkgs/*.ipk` into it; copy `opkg-key.pub` into it (merged feed — opkg ignores foreign-arch packages and picks the matching build; own-words comment); fetch the canonical index script at run time: `curl -fsSL -o ipkg-make-index.sh https://raw.githubusercontent.com/openwrt/openwrt/openwrt-22.03/scripts/ipkg-make-index.sh`; write the mkhash shim `printf '#!/bin/sh\nsha256sum "$2" | cut -d" " -f1\n' > mkhash.sh` + `chmod +x`; run the indexer from `staging/opkg` with `MKHASH=<workspace>/mkhash.sh` (relative `$PWD/../../mkhash.sh` from the staging dir is the inherited mechanism — the path must resolve to the workspace root; re-express with an equivalent absolute path if cleaner, keeping the indexed output byte-identical): `bash <index-script> . > Packages.manifest`; filter the manifest with `grep -vE '^(Maintainer|LicenseFiles|Source|SourceName|Require|SourceDateEpoch)'` into `Packages`; remove the manifest; apply the usign padding workaround: when `(64 + <byte size of Packages>) % 128` ∈ {110, 111}, append two empty lines to `Packages`; `gzip -9nc Packages > Packages.gz`; write the secret to `opkg.sec`; one `docker run --rm` with `-v "$PWD/staging/opkg:/repo"` and `-v "$PWD/opkg.sec:/opkg.sec"` over `openwrt/rootfs:x86-64-22.03.7` running `cd /repo && usign -S -s /opkg.sec -m Packages -x Packages.sig` (sign the UNCOMPRESSED Packages — opkg zcats the list before verifying; own-words comment); list the resulting `staging/opkg/`.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings (re-express the `sh -c` quoting so SC2016 does not reappear, without changing the signed content)
 Expected: secret name `TT_OPKG_SIGN_KEY`; rootfs image tag exact.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Merged-dir contents, curl URL (openwrt-22.03 branch), mkhash shim text, filter field list, padding condition + payload (two empty lines), `gzip -9nc`, usign sign target (`Packages`, not `.gz`), container image, secret name — item 10, D9.
 
 **Verification**: YAML parses; actionlint clean (SC2016 eliminated or knowingly identical); opkg-half pins match the inventory; the chunk is a faithful re-expression of item 10.
 
-### [ ] Task 6: Chunk 5 — publish-repo verification steps
+### [x] Task 6: Chunk 5 — publish-repo verification steps
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add the two verification steps after the opkg step)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 Step "Verify the apk installs on 25.12": one `docker run --rm` with read-only mount `-v "$PWD/staging/apk:/repo:ro"` over `openwrt/rootfs:x86-64-25.12.0`; inside: `mkdir -p /var/lock /etc/apk/keys /etc/apk/repositories.d`; copy `/repo/key-build.pub` → `/etc/apk/keys/trusttunnel.pub` (exactly install.sh's arrangement); write the repository entry `file:///repo/x86_64/packages.adb` into `/etc/apk/repositories.d/trusttunnel.list` (index file named explicitly — own-words comment); `apk update`; `apk add luci-app-trusttunnel` (resolves the real dependency set against the version's official feeds); run `/opt/trusttunnel_client/trusttunnel_client --version` (full path — not on PATH; proves the right statically-linked binary landed).
 
 Step "Verify the ipk installs on 23.05/24.10": loop `for img in x86-64-23.05.6 x86-64-24.10.8`; per image one `docker run --rm` with read-only mount `-v "$PWD/staging/opkg:/repo:ro"` over `openwrt/rootfs:<img>`; inside: `mkdir -p /var/lock /etc/opkg/keys`; copy `/repo/opkg-key.pub` → `/etc/opkg/keys/trusttunnel.pub`; compute the fingerprint (`usign -F -p`) and copy the key to `/etc/opkg/keys/<fingerprint>` (BOTH files — the same arrangement install.sh sets up); write `src/gz trusttunnel file:///repo` into `/etc/opkg/customfeeds.conf` (URL must NOT name the index — opkg appends `/Packages.gz` and verifies `Packages.sig` against the key; own-words comment); `opkg update`; `opkg install luci-app-trusttunnel`; full-path `--version`. Own-words comments on why the 22.03-built ipk is verified on the NEWER rootfs versions (dependencies are unversioned; building again on those SDKs would prove nothing about the artifact).
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings
 Expected: the three image tags exact (`x86-64-25.12.0`, `x86-64-23.05.6`, `x86-64-24.10.8`); read-only mounts; no secrets used in these steps.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Key placement matching install.sh (stable name + fingerprint copy for opkg), explicit `packages.adb` entry, `src/gz trusttunnel` line shape, `/var/lock`, full-path `--version`, image list — items 11, 12, D5.
 
 **Verification**: YAML parses; actionlint clean; verification steps re-express items 11–12 with every detail of D5; the steps still mirror the TT-18 contract (cross-read `.sdd/.current/issues/TT-18/issue.md` repository-setup items to confirm the arrangement textually agrees).
 
-### [ ] Task 7: Chunk 6 — release upload step
+### [x] Task 7: Chunk 6 — release upload step
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add the release-assets step between the verification steps and the site step)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 One step `if: startsWith(github.ref, 'refs/tags/')` using `softprops/action-gh-release@v3` with files = the four staging globs exactly: `staging/luci-apk/*.apk`, `staging/apk-pkgs/trusttunnel-client-*.apk` (arch-suffixed client apks), `staging/luci-ipk/*.ipk`, `staging/opkg-pkgs/*.ipk`. Own-words comment: uploading from publish-repo (rather than from each matrix job) makes the release a single writer; tag-only so dispatch runs never touch releases.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings
 Expected: action ref `softprops/action-gh-release@v3`; the four globs byte-identical to the pin inventory.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Tag-only condition, single-writer placement, exact file set — item 13, D6.
 
 **Verification**: YAML parses; actionlint clean; release-upload step re-expresses item 13 (4 file groups, tag-only, inside publish-repo only).
 
-### [ ] Task 8: Chunk 7 — site assembly + Pages deploy
+### [x] Task 8: Chunk 7 — site assembly + Pages deploy
 
 **Files:**
 
 - Modify: `.github/workflows/release.yml` (add the final five steps: site assemble, Jekyll build, Pages configure, Pages upload, Pages deploy)
 
-- [ ] **Step 1: Write the chunk from the contract**
+- [x] **Step 1: Write the chunk from the contract**
 
 Assemble step: `mkdir -p site/apk site/opkg`; `cp -r staging/apk/. site/apk/` (per-arch dirs + `key-build.pub` + signed indexes); copy ONLY `staging/opkg/*.ipk`, `Packages`, `Packages.gz`, `Packages.sig`, `opkg-key.pub` into `site/opkg/` (never the index tooling or the manifest); `rm -rf staging`; then copy the repo-site templates in the ACTUAL order and destinations:
 
@@ -569,17 +569,17 @@ Own-words comments for the index pages: directory indexes for humans — Pages s
 
 Then: `actions/jekyll-build-pages@v1` with source `site` (renders `README.md` → `index.html` and the three `index.md` templates → their `index.html` pages via `_layouts/repo-index.html`, and copies the package files through byte-identically); `actions/configure-pages@v5`; `actions/upload-pages-artifact@v3` with path `_site`; `actions/deploy-pages@v4`. Own-words comment that nothing is committed to any branch and the site is the workflow's direct output at `https://i-zhirov.github.io/trusttunnel-openwrt/`.
 
-- [ ] **Step 2: Validate YAML syntax and action references**
+- [x] **Step 2: Validate YAML syntax and action references**
 
 Run: ruby YAML parse Expected: exit 0
 Run: `actionlint .github/workflows/release.yml` Expected: exit 0, no findings
 Expected: the four Pages action refs exactly `@v1`/`@v5`/`@v3`/`@v4`; inputs `source: site` and `path: _site`; `repo-site/` template names and their destinations (`_layouts/` → `site/_layouts`, `apk-index.md` → `site/apk/index.md`, `opkg-index.md` → `site/opkg/index.md`, `apk-arch-index.md` → `site/apk/<arch>/index.md`, `favicon.ico`, `_config.yml`, `README.md`) exact; no `apk-index.html`/`opkg-index.html` reference anywhere in the chunk.
 
-- [ ] **Step 3: Tick the contract checklist**
+- [x] **Step 3: Tick the contract checklist**
 
 Selective opkg copy, `rm -rf staging`, `cp -r repo-site/_layouts site/_layouts`, the three markdown index templates with their placeholders and destinations (`apk-index.md`/`__ARCH_LIST__` → `site/apk/index.md`, `opkg-index.md` → `site/opkg/index.md`, `apk-arch-index.md`/`__ARCH__`+`__FILES__` → `site/apk/<arch>/index.md`), `__TAG__` substitution target and variable, Jekyll source, Pages action versions, upload path — items 14, 15, D10–D12. Confirm `repo-site/` holds the 7-entry set (verified 2026-09-09): `apk-index.md`, `apk-arch-index.md`, `opkg-index.md`, `README.md` (still contains the `__TAG__` placeholder, line 19), `_config.yml`, `favicon.ico`, `_layouts/repo-index.html` — and NO `apk-index.html`/`opkg-index.html`.
 
-- [ ] **Step 4: Full-file re-validation**
+- [x] **Step 4: Full-file re-validation**
 
 Run: ruby YAML parse + `actionlint .github/workflows/release.yml` over the COMPLETE new file Expected: exit 0 both, no findings beyond (ideally none at all — the two inherited info-level findings must not silently reappear)
 Run: re-run the matrix-count verification against the NEW file Expected: 20/19, ipk = apk − `aarch64_cortex-a76`
@@ -589,6 +589,15 @@ Run: `git diff --stat .github/workflows/release.yml` and read the diff — Expec
 **Verification**: complete file parses and lints clean; matrix counts re-verified on the new file; full checklist green; diff shows a full re-expression with zero copied YAML/comments.
 
 ### [ ] Task 9: Final verification — workflow_dispatch release from a test tag + live install
+
+> **Note (2026-09-09, implementation):** the live run cannot execute in
+> this environment (no GitHub access) — Steps 2–4 below remain unchecked
+> and must be run from a real checkout before the issue is closed. What
+> was performed during implementation: Step 1's local tree checks (git
+> status clean, `key-build.pub`/`opkg-key.pub` in the tree, `repo-site/`
+> intact) and Step 5's scratch-reference-copy deletion (PRD convention).
+> The static gates (actionlint 0 findings, YAML parse, pin/digest/secret
+> inventory, matrix re-count, full contract checklist) are all green.
 
 **Files:**
 
