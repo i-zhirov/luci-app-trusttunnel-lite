@@ -1,7 +1,7 @@
 # Implementation Plan: TT-06 — init.d service script (clean-room reimplementation)
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-06/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
