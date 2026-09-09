@@ -2,7 +2,7 @@
 
 - **Created**: 2026-09-08
 - **Revised**: 2026-09-09 (plan revision — review #1 Open findings resolved)
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-10/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
@@ -156,14 +156,14 @@ The repo must stay clean: no `*.old` copies, no old-vs-new diffs committed (PRD 
 
 ## Tasks
 
-### [ ] Task 1: Baseline — prove the gates green and capture the key-list oracle
+### [x] Task 1: Baseline — prove the gates green and capture the key-list oracle
 
 **Files:**
 
 - Read: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js` (oracle only — do not copy)
 - Read: `.github/workflows/ci.yml` (gate commands, lines 191–233)
 
-- [ ] **Step 1: Write the failing check — negative control for the JS gate**
+- [x] **Step 1: Write the failing check — negative control for the JS gate**
 
 Create a temp file that must be rejected, proving the gate detects breakage (ci.yml only has this control for ucode):
 
@@ -187,15 +187,15 @@ node -e '
 ' /tmp/tt10-broken.js
 ```
 
-- [ ] **Step 2: Run the negative control to verify it fails**
+- [x] **Step 2: Run the negative control to verify it fails**
 
 Run: the command above. Expected: FAIL — exit code 1 with a `SyntaxError` naming `/tmp/tt10-broken.js`.
 
-- [ ] **Step 3: Run both ci.yml gates on the current view directory**
+- [x] **Step 3: Run both ci.yml gates on the current view directory**
 
 Run: the JS syntax gate with the directory glob `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js`, then the LuCI require gate loop over the same directory (`mods="ui dom rpc uci form view poll fs network validation"`). Expected: PASS for every file, including the current `status.js`. This is the green baseline the rewritten file must reproduce.
 
-- [ ] **Step 4: Capture the baseline key list and check `.po` coverage**
+- [x] **Step 4: Capture the baseline key list and check `.po` coverage**
 
 Extract the sorted unique `_()` keys of the current view into the oracle file, and verify every key exists in the `.po`:
 
@@ -213,13 +213,13 @@ Run a coverage check: parse `msgid` lines from `packages/luci-app-trusttunnel/po
 
 **Verification**: negative control fails, both gates pass on the untouched directory, `/tmp/tt10-keys-baseline.txt` contains 51 sorted unique keys (54 call sites), `.po` coverage 0 missing.
 
-### [ ] Task 2: Skeleton — requires, RPC declarations, minimal `view.extend`
+### [x] Task 2: Skeleton — requires, RPC declarations, minimal `view.extend`
 
 **Files:**
 
 - Rewrite: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 
-- [ ] **Step 1: Write the failing test — require-gate fixture**
+- [x] **Step 1: Write the failing test — require-gate fixture**
 
 Create a fixture in `/tmp` (not in the repo) that calls `ui` without declaring it, proving the gate catches an undeclared module:
 
@@ -231,35 +231,35 @@ printf "%s\n" \
   > /tmp/tt10-norequire.js
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: the LuCI require gate single-file form against `/tmp/tt10-norequire.js`. Expected: FAIL — exit 1 with `ui is used but not declared with 'require ui'` — proves the gate guards exactly what the skeleton must satisfy.
 
-- [ ] **Step 3: Write the minimal implementation**
+- [x] **Step 3: Write the minimal implementation**
 
 Write the new `status.js` with: `'use strict';`; the five `'require ...'` lines (`view`, `poll`, `rpc`, `ui`, `dom`); the four `rpc.declare` declarations per the Contracts table (`status` no params, `service`/`versions`/`log` with their params arrays, object `luci.trusttunnel`); and `return view.extend({ ... })` containing a minimal `render` that returns a single heading with the page title key `TrustTunnel`. No other methods yet. Write the file from the contract only.
 
-- [ ] **Step 4: Run the gates to verify they pass**
+- [x] **Step 4: Run the gates to verify they pass**
 
 Run: the JS syntax gate on the single file, then the LuCI require gate on the single file. Expected: PASS on both (requires used are all declared; syntax wraps cleanly in the loader function).
 
 **Verification**: both gates pass on the single file; `git diff --stat` shows only `status.js` modified; no other view file touched.
 
-### [ ] Task 3: `verdict()` and the verdict banner
+### [x] Task 3: `verdict()` and the verdict banner
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 
-- [ ] **Step 1: Write the failing check — key-list prefix diff**
+- [x] **Step 1: Write the failing check — key-list prefix diff**
 
 Run the key-extraction command from Task 1 Step 4 against the current file into `/tmp/tt10-keys-new.txt` and diff against the baseline. Expected: FAIL — the skeleton has 1 key, the baseline has 51; the diff shows the missing verdict/status strings. This is the TDD loop's "red": the implemented contract keys must appear before the check is green.
 
-- [ ] **Step 2: Run the check to verify it fails**
+- [x] **Step 2: Run the check to verify it fails**
 
 Run: `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt`. Expected: FAIL (baseline keys missing from the new file).
 
-- [ ] **Step 3: Write the minimal implementation — `verdict(st)` and `renderVerdict`**
+- [x] **Step 3: Write the minimal implementation — `verdict(st)` and `renderVerdict`**
 
 Add to the view:
 
@@ -275,27 +275,27 @@ Add to the view:
 - A `renderVerdict(st)` method: for `success` render an empty `div`; otherwise render a `div` with class `alert-message <level>` containing a `strong` with the head, plus the detail text (after a line break) when the detail is non-empty.
 - Wire `renderVerdict` into `render` output above the heading content. No facts/versions/buttons/polling yet.
 
-- [ ] **Step 4: Run the check to verify it passes**
+- [x] **Step 4: Run the check to verify it passes**
 
 Run: JS syntax gate (single file), LuCI require gate (single file), and the key-extraction + diff from Step 1. Expected: gates PASS; the diff now shows fewer missing keys — the 18 verdict/status strings present.
 
 **Verification**: gates pass; the 18 verdict-state keys appear in the extracted list — states 1–3 (9 keys: heads/details plus the two no-host fallbacks) and the three success branches (9 keys: bypass-profile head/no-host head/detail, vpn-profile head/no-host head/detail, legacy head/no-host head/detail); self-review: the two profile branches precede the legacy `success` return in `verdict()`, exactly as the issue contract orders them; `State`/`working` arrive in Task 4 with the facts table; no old code text copied (self-review: file reads as fresh expression of the contract).
 
-### [ ] Task 4: Facts and Versions tables with the "Check now" button
+### [x] Task 4: Facts and Versions tables with the "Check now" button
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 
-- [ ] **Step 1: Write the failing check — key-list prefix diff**
+- [x] **Step 1: Write the failing check — key-list prefix diff**
 
 Run the extraction+diff again. Expected: FAIL — the facts/versions keys (`Now`, `Versions`, `Mode`, `Profile %s — bypass, only the VPN rules are tunneled`, `Profile %s — VPN, everything except the bypass rules is tunneled`, `Everything through VPN`, `State`, `working`, `Server`, `Package`, `unknown`, `TrustTunnel client`, `not installed`, `Update check`, `Update`, `unavailable — no network and no cached result`, `%s is available`, `run install.sh again to update`, `the installed version is newer than the latest release (%s)`, `up to date`, `GitHub unreachable, showing the last cached result`, `Check now`, `Checking…`) are still missing.
 
-- [ ] **Step 2: Run the check to verify it fails**
+- [x] **Step 2: Run the check to verify it fails**
 
 Run: `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt`. Expected: FAIL.
 
-- [ ] **Step 3: Write the minimal implementation — `renderFacts`, `renderVersions`, `row`**
+- [x] **Step 3: Write the minimal implementation — `renderFacts`, `renderVersions`, `row`**
 
 Add:
 
@@ -317,27 +317,27 @@ Add:
 - In `render`: create the versions box initially containing an `em` with key `Checking…`, and fire `callVersions(false)` once at render time, replacing the box content with `renderVersions(v, box)`; on failure show the error as an `em` inside the box.
 - Place the two tables side by side under headings `Now` and `Versions` in a two-column flex container (each column `flex:1 1 24em;min-width:0` so they stack on narrow screens).
 
-- [ ] **Step 4: Run the check to verify it passes**
+- [x] **Step 4: Run the check to verify it passes**
 
 Run: both gates on the single file, then the extraction+diff. Expected: gates PASS; the diff shows all facts/versions keys present, including the two profile Mode strings.
 
 **Verification**: gates pass; key diff shows the full facts/versions set (23 keys incl. `Profile %s — bypass, only the VPN rules are tunneled` and `Profile %s — VPN, everything except the bypass rules is tunneled`); the Mode row branches on `st.routing_profile`/`st.routing_mode` (grep the file for `routing_profile` in `renderFacts`); `Check now` click path is present (grep the file for `callVersions(true)` and `renderVersions`).
 
-### [ ] Task 5: Start/Stop/Restart buttons and `handleAction`
+### [x] Task 5: Start/Stop/Restart buttons and `handleAction`
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 
-- [ ] **Step 1: Write the failing check — key-list prefix diff**
+- [x] **Step 1: Write the failing check — key-list prefix diff**
 
 Run the extraction+diff. Expected: FAIL — button keys (`Start`, `Stop`, `Restart`, `Please wait`, `Running…`, `The service did not start. The client log below says why.`, `Command failed`, `Done`) are still missing.
 
-- [ ] **Step 2: Run the check to verify it fails**
+- [x] **Step 2: Run the check to verify it fails**
 
 Run: `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt`. Expected: FAIL.
 
-- [ ] **Step 3: Write the minimal implementation — `handleAction` and buttons**
+- [x] **Step 3: Write the minimal implementation — `handleAction` and buttons**
 
 Add:
 
@@ -350,27 +350,27 @@ Add:
   - on rejection: hide the modal, show a danger notification with the error message (`e.message || String(e)`).
 - In `render`, below the verdict box: three buttons — `Start` (class `cbi-button cbi-button-apply`), `Stop` (`cbi-button cbi-button-reset`), `Restart` (`cbi-button cbi-button-action`) — each wiring its click to `handleAction` with the matching action string (`start`/`stop`/`restart`), separated by spaces.
 
-- [ ] **Step 4: Run the check to verify it passes**
+- [x] **Step 4: Run the check to verify it passes**
 
 Run: both gates on the single file, then the extraction+diff. Expected: gates PASS; all 8 button/modal keys present in the diff.
 
 **Verification**: gates pass; diff shows button keys; the four result branches (`not_running`, `code !== 0`, success, rejection) are all present in `handleAction`.
 
-### [ ] Task 6: Polling, `load()`, and the full page layout
+### [x] Task 6: Polling, `load()`, and the full page layout
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 
-- [ ] **Step 1: Write the failing check — key-list diff + behavioral gap**
+- [x] **Step 1: Write the failing check — key-list diff + behavioral gap**
 
 Run the extraction+diff. Expected: still FAIL only if `Client log` is missing (the last missing key); all other 50 keys present. Also run both gates. The behavioral gap (no polling, no initial status) is not caught by gates — note it for the manual checklist.
 
-- [ ] **Step 2: Run the check to verify it fails**
+- [x] **Step 2: Run the check to verify it fails**
 
 Run: `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt`. Expected: FAIL (missing `Client log` key, if not yet added).
 
-- [ ] **Step 3: Write the minimal implementation — `load`, polls, layout**
+- [x] **Step 3: Write the minimal implementation — `load`, polls, layout**
 
 Add to the view:
 
@@ -383,28 +383,28 @@ Add to the view:
   - full page layout: page title `TrustTunnel`; section 1 (verdict box + buttons); section 2 (the `Now`/`Versions` flex pair); section 3 with heading `Client log` and the log box. Use the LuCI container classes `cbi-map` / `cbi-section`.
 - Remove any leftover skeleton content; the file now implements the whole contract.
 
-- [ ] **Step 4: Run the check to verify it passes**
+- [x] **Step 4: Run the check to verify it passes**
 
 Run: both gates on the single file, then the extraction+diff. Expected: gates PASS; `diff` reports the lists identical (all 51 unique keys).
 
 **Verification**: gates pass; `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt` is empty (identical — 51 keys); grep confirms two `poll.add(..., 10)` registrations (status, log) and exactly one `callVersions(false)` plus one `callVersions(true)` (Check now).
 
-### [ ] Task 7: Full verification — gates, key diff, `.po` coverage, manual LuCI checklist, clean tree
+### [x] Task 7: Full verification — gates, key diff, `.po` coverage, manual LuCI checklist, clean tree
 
 **Files:**
 
 - Verify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/status.js`
 - Verify: `packages/luci-app-trusttunnel/po/ru/trusttunnel.po`
 
-- [ ] **Step 1: Run the full ci.yml JS gates on the view directory**
+- [x] **Step 1: Run the full ci.yml JS gates on the view directory**
 
 Run: the JS syntax gate over `.../view/trusttunnel/*.js` and the LuCI require gate over the same directory (exact ci.yml commands from Task 1). Expected: PASS on every file.
 
-- [ ] **Step 2: Run the key-list diff and `.po` coverage check**
+- [x] **Step 2: Run the key-list diff and `.po` coverage check**
 
 Run: extract the new key list to `/tmp/tt10-keys-new.txt` (same command as baseline) and `diff -u /tmp/tt10-keys-baseline.txt /tmp/tt10-keys-new.txt`. Expected: empty output — 51 unique keys, byte-identical (including the `%s` placeholders — two of them in the two-host profile heads — the em dashes in the profile and Mode strings, the ellipses, and the embedded quotes). Then re-run the `.po` coverage check from Task 1 Step 4. Expected: 0 keys missing — 51/51 — the existing translation maps every string.
 
-- [ ] **Step 3: Manual LuCI checklist (stubbed RPC responses)**
+- [x] **Step 3: Manual LuCI checklist (stubbed RPC responses)**
 
 On a device/rootfs with LuCI, verify each state by controlling the backend inputs (removing the client binary, toggling `enabled`, observing the real device state; the RPC responses come from the TT-09 backend):
 
@@ -420,8 +420,46 @@ On a device/rootfs with LuCI, verify each state by controlling the backend input
 9. Update states: force `latest:null` (unavailable line), `update_available` (available line), `ahead` (newer-than-latest line), plain up-to-date, and `stale` (extra cached row); "Check now" re-renders the table in place and errors surface as a danger notification.
 10. Polling: status + log refresh every 10 s (observe the log box and facts updating without a page reload); versions requested once on load, not on each poll (network tab / backend log shows a single non-refresh call).
 
-- [ ] **Step 4: Clean-tree check**
+> **Execution note (2026-09-09)**: no device/rootfs was available in the
+> implementation environment; this step was executed as a stubbed-RPC node
+> `vm` harness (`/tmp/tt10-behavior-test.js`, not committed) loading the
+> shipped file with stubbed `rpc`/`view`/`E`/`ui`/`dom`/`poll`/`_`
+> (LuCI-style `String.prototype.format`) — 110 assertions, 0 failed,
+> covering checklist items 1–10: all four verdict states incl. the three
+> success variants and the no-host fallbacks (items 1–7), button result
+> branches `not_running`/`code!==0`/`Done`/rejection (item 8), all four
+> update states + stale row + Check-now presence (item 9), two
+> `poll.add(..., 10)` registrations + single `callVersions(false)` at
+> render + poll-driven verdict/facts/log updates (item 10). The
+> on-device LuCI rendering pass remains for the device-verification step.
+
+- [x] **Step 4: Clean-tree check**
 
 Run: `git status --porcelain` and `git log --oneline -3`. Expected: only `status.js` modified (plus the issue/plan files of this issue); no `*.old` files, no committed old-vs-new diffs; nothing else in the tree changed by this issue.
 
 **Verification**: all four acceptance criteria of the issue are met — all 4 verdict states render as specified, including the three success variants (checklist items 1–7), polling cadence correct (item 10), buttons/update flows behave identically (items 8–9), ci.yml gates pass (step 1), translation keys unchanged (step 2: 51 unique keys, byte-identical, `.po` 51/51).
+
+## Implementation report (2026-09-09)
+
+- All 7 tasks executed in order; every step completed (see the checkboxes
+  above). Final file: 263 lines, fresh expression written from the TT-10
+  issue contract + the TT-09 RPC shapes only; the inherited file was never
+  read as source (only the `_()` key extraction ran against it, which is
+  contract data).
+- **Gate note**: the interactive shell is zsh, which does not word-split
+  unquoted `$mods`; the ci.yml require-gate loop is bash semantics. All
+  require-gate runs in this issue therefore executed under `bash -c` with
+  the exact ci.yml loop to mirror CI. (A zsh run would vacuously pass.)
+- **Deviations**: Task 7 Step 3 executed as a stubbed-RPC node `vm`
+  harness (110/110 assertions) because no device/rootfs was available; the
+  on-device LuCI rendering pass remains pending. No code deviations from
+  the contract: all verdict strings, button flows, poll cadence, update
+  states, and the 51-key set match byte-identically.
+- **Environment note**: during Task 7, a concurrent process (TT-11
+  diagnostics work) modified `README.md`, `diagnostics.js`, and created
+  `tests/zz_tt11_keys_baseline.txt` and `uc.out`. Those changes are not
+  part of this issue and were left untouched; this issue changed only
+  `status.js` and this plan file.
+- Nothing committed; `/tmp/tt10-keys-baseline.txt`,
+  `/tmp/tt10-keys-new.txt`, `/tmp/tt10-behavior-test.js` are the temp
+  oracle/harness artifacts (not in the repo).

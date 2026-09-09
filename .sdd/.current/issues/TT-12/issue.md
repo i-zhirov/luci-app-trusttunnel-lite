@@ -1,6 +1,6 @@
 # Issue TT-12: diagnostics.js view
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-09
 - **Effort**: M–L

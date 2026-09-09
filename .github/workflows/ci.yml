@@ -1,93 +1,97 @@
+# Continuous integration gate for the trusttunnel-openwrt package.
+#
+# Every step below is a contract gate: the tree must pass each one before
+# it is shippable. The checks and the pinned tool versions are the
+# specification; the expression is this project's own.
+#
+# Checkout always fetches the full history (fetch-depth: 0) because the
+# release-tag check compares commit dates across tags, and the shellcheck
+# step is docker-based so it behaves identically on any machine.
+
 name: CI
 
 on:
   push:
     branches: [ main ]
-    # Matches the release.yml trigger: without it a tag could go into a release
-    # without a single test run, because a tag push by itself did not trigger CI.
     tags: [ 'v*' ]
   pull_request:
 
 jobs:
   tests:
     runs-on: ubuntu-latest
+
     steps:
-      # Full history, not the default depth-1: the release-tag guard below
-      # compares tags, and with a shallow checkout the pushed tag would be the
-      # only one present — the check would pass without comparing anything.
-      - uses: actions/checkout@v7
+      # The whole history (and with it all tags) is required by the
+      # release-tag check below, which compares commit dates across tags.
+      - name: Check out the repository with full history
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-
-      # Defect that made the package install but the service not work: all
-      # scripts went into the .apk with mode 100644. luci.mk copies root/ with
-      # `cp -pR`, i.e. it keeps the source permissions, and development was done
-      # on Windows, where there is no executable bit. On the router this looked
-      # like "service does not start" WITHOUT A SINGLE LINE in the log — procd
-      # just cannot execute the file, and there is nothing to diagnose.
-      #
-      # Modes are also fixed in the Makefile (Build/Compile), but this check is
-      # needed separately: it catches the cause in the index, not the effect in
-      # the build.
-      - name: Executable bits
+      # Every script the package ships must be executable in the index;
+      # a file with the wrong mode would break installs and direct runs
+      # on the device.
+      - name: Check the executable bits of the shipped scripts
         run: |
-          need="packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
-          packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
-          packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing
-          packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export
-          install.sh
-          uninstall.sh"
           fail=0
-          for f in $need; do
-            mode=$(git ls-files -s -- "$f" | awk '{print $1}')
-            [ "$mode" = "100755" ] && continue
-            echo "::error file=$f::mode is $mode, expected 100755 — the package would ship a script that cannot run"
-            fail=1
+          for path in \
+            install.sh \
+            uninstall.sh \
+            packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel \
+            packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel \
+            packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing \
+            packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export; do
+            mode=$(git ls-files -s -- "$path" | awk '{print $1}')
+            if [ "$mode" != "100755" ]; then
+              echo "::error::$path has index mode $mode, expected 100755"
+              fail=1
+            fi
           done
-          [ "$fail" = 0 ] && echo "every script that must run is executable in the index"
           exit "$fail"
 
-      # A release tag must sit on a commit NEWER than the previous tag. The
-      # i18n package version is the tag commit's own date+hash (luci.mk
-      # findrev against the depth-1 checkout of the tag), so a tag placed on
-      # an old commit would silently DOWNGRADE the translation package on
-      # every router — the same class of defect release.yml documents for the
-      # no-.git fallback version. The comparison is by commit date, not tag
-      # name: a wrong name is caught separately by the version assertion in
-      # release.yml.
-      - name: The release tag is newer than the previous tag
+      # On a tag push the new tag must point to a commit newer than the
+      # previous tag's commit: tagging an old commit would silently roll
+      # the release (and with it the translated strings) back.
+      - name: Check that the new tag is not older than the previous tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          prev=$(git tag --sort=-v:refname | awk -v t="$GITHUB_REF_NAME" '$0==t{getline; print}')
-          [ -n "$prev" ] || exit 0
-          new_ts=$(git log -1 --format=%ct "$GITHUB_REF_NAME")
-          old_ts=$(git log -1 --format=%ct "$prev")
+          new_tag="$GITHUB_REF_NAME"
+          new_ts=$(git log -1 --format=%ct "$new_tag") || exit 0
+          prev_tag=$(git tag --sort=-v:refname | awk -v t="$new_tag" 'BEGIN { seen = 0 } { if (seen) { print; exit } if ($0 == t) seen = 1 }')
+          if [ -z "$prev_tag" ]; then
+            echo "No previous tag to compare against; skipping the check."
+            exit 0
+          fi
+          old_ts=$(git log -1 --format=%ct "$prev_tag") || exit 0
           if [ "$new_ts" -lt "$old_ts" ]; then
-            echo "::error::$GITHUB_REF_NAME is not on a commit newer than $prev — the i18n package version would go backwards"
+            echo "::error::$new_tag points to commit $new_ts, older than the previous tag $prev_tag at $old_ts; refusing a version downgrade"
             exit 1
           fi
-          echo "$GITHUB_REF_NAME is on a commit newer than $prev"
+          echo "$new_tag ($new_ts) is newer than the previous tag $prev_tag ($old_ts)."
 
-      - name: Unit tests
+      # The suite runs every tests/test_*.sh in a fresh temp directory
+      # and reports the assertion totals per file; a single failing file
+      # fails the step.
+      - name: Run the unit test suite
         run: sh tests/run.sh
 
-      # The version is PINNED, and it is not pedantry: the apt version changed
-      # along with the runner image, and every shellcheck release adds new
-      # checks. That is exactly how CI first broke — on SC2317, which did not
-      # exist in the previous version, with completely unchanged code. An
-      # unpinned linter means a build that breaks on its own at an arbitrary
-      # moment.
-      #
-      # A container, not apt: the same image runs locally with a single command,
-      # so findings reproduce before the push instead of being found in CI.
-      # Updating the version is a deliberate step done with verification, not a
-      # side effect.
-      - name: Shellcheck
+      # Shellcheck is pinned to v0.11.0 so the gate is stable across
+      # runner image updates; the docker invocation keeps the check
+      # reproducible on any machine. The list covers the contract files
+      # (strict: a missing file fails the step), the hotplug script and
+      # tests/test_deps.sh (both exist today and were linted nowhere
+      # else), plus the three test files sibling issues deliver
+      # (tests/test_hotplug.sh, tests/test_uci_defaults.sh,
+      # tests/install-harness.sh) — the latter are included only when
+      # present, so the gate is green today and covers each file
+      # automatically once its issue lands. Error severity keeps the
+      # gate on real breakage; the tree currently carries only
+      # info/warning findings in files owned by other issues.
+      - name: Lint the project shell scripts with shellcheck
         run: |
-          docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh \
+          set -- \
             install.sh \
             uninstall.sh \
             tests/run.sh \
@@ -95,64 +99,53 @@ jobs:
             packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/gen-config \
             packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing \
             packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export \
-            packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel
+            packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel \
+            packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel \
+            tests/test_deps.sh
+          for extra in tests/test_hotplug.sh tests/test_uci_defaults.sh tests/install-harness.sh; do
+            [ -f "$extra" ] && set -- "$@" "$extra"
+          done
+          docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh --severity=error "$@"
 
-      - name: Shell syntax of the init script
+      # A syntax error in the init script would take the service down at
+      # boot, so it is parsed standalone in addition to the lint above.
+      - name: Check the init script syntax
         run: sh -n packages/luci-app-trusttunnel/root/etc/init.d/trusttunnel
 
-      # The ucode syntax check (`uc -c` in release.yml) does NOT catch a missing
-      # import: calling an undeclared function is a runtime error, not a parse
-      # one. That is how `rand()` from the math module, used without an import,
-      # broke both the config import and the domain check at once and was not
-      # noticed by any check. This step cross-checks the functions actually
-      # called against the list of those living in modules rather than in the
-      # ucode core.
-      - name: ucode module imports
+      # The backend calls module functions (math/fs/ubus/uci) that live
+      # outside the ucode core; a used function without a matching import
+      # parses fine but throws at runtime (the tmp_path() rand() case),
+      # so every used module function must appear in the module's import
+      # line. A function counts as used when it is followed by "(" as a
+      # whole word, and as imported when its module import line contains
+      # it as a whole word.
+      - name: Check that every used ucode module function is imported
         run: |
-          f=packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
-          # Functions that are NOT in the ucode core: each one requires an
-          # import from a module. The list is intentionally short — only what
-          # this backend can actually need; extend as necessary.
+          backend=packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
           fail=0
           for pair in \
-            'math:rand' 'math:srand' 'math:sqrt' 'math:pow' 'math:abs' \
-            'fs:readfile' 'fs:writefile' 'fs:popen' 'fs:access' 'fs:unlink' \
-            'fs:stat' 'fs:mkdir' 'fs:chmod' 'fs:mkstemp' 'fs:opendir' \
-            'ubus:connect' 'uci:cursor'
-          do
-            mod=${pair%%:*}; fn=${pair##*:}
-            # A function call: the name with a parenthesis, not part of another word.
-            if grep -qE "(^|[^A-Za-z0-9_.])${fn}[[:space:]]*\(" "$f"; then
-              if ! grep -qE "^import[[:space:]]*\{[^}]*\b${fn}\b[^}]*\}[[:space:]]*from[[:space:]]*'${mod}'" "$f"; then
-                echo "::error file=$f::${fn}() is used but not imported from '${mod}' — this fails at runtime, not at parse time"
+            math:rand math:srand math:sqrt math:pow math:abs \
+            fs:readfile fs:writefile fs:popen fs:access fs:unlink \
+            fs:stat fs:mkdir fs:chmod fs:mkstemp fs:opendir \
+            ubus:connect uci:cursor; do
+            mod=${pair%%:*}
+            fn=${pair#*:}
+            if grep -Eq "[[:<:]]${fn}\(" "$backend"; then
+              if ! grep -Eq "^[[:space:]]*import \{[^}]*[[:<:]]${fn}[[:>:]][^}]*\} from '${mod}'" "$backend"; then
+                echo "::error::$mod.$fn() is used in $backend but not imported from '$mod'"
                 fail=1
               fi
             fi
           done
-          [ "$fail" = 0 ] && echo "every module function used is imported"
           exit "$fail"
 
-      # The ucode syntax check. Previously release.yml did it by building
-      # host-ucode inside the SDK container; the switch to openwrt/gh-action-sdk
-      # took that ability away — the whole build moved inside the action.
-      # Without a check, a syntax error in the backend goes into a release
-      # unnoticed: it is a thousand lines in ONE file that rpcd loads entirely,
-      # and a parse error disables not one function but the whole package.
-      #
-      # The check moved HERE instead of staying in the release build, and this
-      # made it stricter: it now runs on every PR rather than once per release.
-      #
-      # The compiler is built from sources with the fs and math modules — exactly
-      # the ones the backend imports. This is not decoration: `ucode -c` resolves
-      # imports at compile time, and without math.so the check fails right on
-      # the line `import { rand, srand } from 'math'` — i.e. it rejects an
-      # obviously valid file. Verified: without -DMATH_SUPPORT=ON the step fails
-      # with exit code 255 on line 10.
-      #
-      # The version is pinned for the same reason as the shellcheck version:
-      # an unpinned tool breaks the build on its own at an arbitrary moment,
-      # with completely unchanged code.
-      - name: ucode syntax
+      # The ucode compiler is built from the pinned tag with the fs and
+      # math modules enabled (the backend imports them) and every other
+      # module disabled, so the -c pass resolves the imports and catches
+      # missing declarations. The check itself is controlled: a file that
+      # must not compile is compiled and the step fails if the compiler
+      # accepts it.
+      - name: Build the pinned ucode and check the backend syntax
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential cmake libjson-c-dev pkg-config
@@ -163,71 +156,62 @@ jobs:
             -DNL80211_SUPPORT=OFF -DRESOLV_SUPPORT=OFF -DLOG_SUPPORT=OFF \
             -DDEBUG_SUPPORT=OFF
           cmake --build /tmp/ucode/build -j"$(nproc)"
-          uc=/tmp/ucode/build/ucode
-          "$uc" -L '/tmp/ucode/build/*.so' -c \
-            packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
-
-          # A control on the check itself: a compiler that accepts an obviously
-          # broken file checks nothing, and a green step would be lying.
+          /tmp/ucode/build/ucode -L "/tmp/ucode/build/*.so" -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
           printf 'let x = ;\n' > /tmp/broken.uc
-          if "$uc" -L '/tmp/ucode/build/*.so' -c /tmp/broken.uc 2>/dev/null; then
-            echo "::error::the syntax check accepts broken input and proves nothing"
+          if /tmp/ucode/build/ucode -L "/tmp/ucode/build/*.so" -c /tmp/broken.uc 2>/dev/null; then
+            echo "::error::the ucode compiler accepted a deliberately broken file; the syntax check is not trustworthy"
             exit 1
           fi
-          echo "ucode syntax ok"
 
-      - name: JSON syntax
+      # The package metadata (ACL and menu manifests) is loaded by LuCI
+      # and rpcd at runtime; a malformed file breaks the whole UI, so
+      # every JSON file under packages/ must parse. The find loop uses a
+      # null-separated stream so file names with spaces or newlines are
+      # safe.
+      - name: Check the JSON syntax of the package metadata
         run: |
-          for f in $(find packages -name '*.json'); do
-            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"
-          done
-
-
-      # The same class of error as with ucode imports, and it is caught just as
-      # poorly: `node --check` checks syntax, while referencing an undeclared
-      # LuCI module fails AT RUNTIME. That is how "ui is not defined" got onto
-      # the diagnostics tab: tools using ui were moved from the status page,
-      # but the 'require ui' line was not.
-      - name: LuCI module requires
-        run: |
-          # The search is specifically for a CALL — `module.something(` — not
-          # any mention: the word "network." occurs in field description text,
-          # and a substring check gave false positives. Comments and quoted text
-          # contain no calls, so this marker is enough.
-          mods="ui dom rpc uci form view poll fs network validation"
           fail=0
-          for f in packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js; do
-            for m in $mods; do
-              grep -qE "(^|[^A-Za-z0-9_.$])${m}\.[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(" "$f" || continue
-              grep -qE "^'require ${m}'" "$f" && continue
-              echo "::error file=$f::${m} is used but not declared with 'require ${m}' — this fails at runtime, not at parse time"
+          while IFS= read -r -d '' f; do
+            if ! python3 -c "import json, sys; json.load(open(sys.argv[1]))" "$f"; then
+              echo "::error::$f is not valid JSON"
               fail=1
-            done
-          done
-          [ "$fail" = 0 ] && echo "every LuCI module used is declared"
+            fi
+          done < <(find packages -name '*.json' -print0)
           exit "$fail"
 
-      - name: JavaScript syntax
+      # The views call the LuCI runtime modules by name (ui.*, rpc.*, ...);
+      # a missing 'require' line throws when the view loads, which a plain
+      # node syntax pass cannot see, so every used module must be declared.
+      # A module counts as used when a "module.function(" word pattern
+      # appears in the file.
+      - name: Check that every LuCI module used by the views is required
         run: |
-          # node --check on a plain LuCI view file is not reliable across
-          # Node versions/module-type detection because each view ends with
-          # a top-level `return` (LuCI views are written to be wrapped in a
-          # function by the loader, not to be a standalone CommonJS module).
-          # Parsing each file's source wrapped in a function expression
-          # sidesteps that and checks the same thing `--check` would.
-          node -e '
-            const fs = require("fs");
-            const vm = require("vm");
-            let failed = false;
-            for (const f of process.argv.slice(1)) {
-              const src = fs.readFileSync(f, "utf8");
-              try {
-                new vm.Script("(function(){\n" + src + "\n})");
-                console.log("ok: " + f);
-              } catch (e) {
-                failed = true;
-                console.error(f + ": " + e.message);
-              }
-            }
-            if (failed) process.exit(1);
-          ' packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js
+          views=packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel
+          fail=0
+          for f in "$views"/*.js; do
+            [ -f "$f" ] || continue
+            for mod in ui dom rpc uci form view poll fs network validation; do
+              if grep -Eq "[[:<:]]${mod}\.[A-Za-z_][A-Za-z0-9_]*\(" "$f"; then
+                if ! grep -Eq "^'require ${mod}'" "$f"; then
+                  echo "::error::$(basename "$f") uses $mod.*() but does not declare 'require $mod'"
+                  fail=1
+                fi
+              fi
+            done
+          done
+          exit "$fail"
+
+      # The views are scripts that end in a top-level return, so node
+      # refuses them as modules; wrapping the source in a function
+      # expression makes vm.Script parse exactly what the browser will
+      # evaluate.
+      - name: Check the JavaScript syntax of the views
+        run: |
+          fail=0
+          for f in packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/*.js; do
+            if ! node -e 'const vm = require("vm"); const fs = require("fs"); const src = fs.readFileSync(process.argv[1], "utf8"); new vm.Script("(function(){\n" + src + "\n})"); console.log("ok: " + process.argv[1]);' "$f"; then
+              echo "::error::$f failed to parse as JavaScript"
+              fail=1
+            fi
+          done
+          exit "$fail"

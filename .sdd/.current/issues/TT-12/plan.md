@@ -1,7 +1,7 @@
 # Implementation Plan: TT-12 diagnostics.js view
 
 - **Created**: 2026-09-08
-- **Status**: Approved
+- **Status**: Implemented
 - **Issue**: `.sdd/.current/issues/TT-12/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash (sdd-planner)
@@ -171,13 +171,13 @@ No new API endpoints. The view consumes four existing `luci.trusttunnel` RPC met
 
 The CI gates are the automated tests for this file. TDD shape: Task 1 proves the gates are a working oracle (they pass on the inherited file and fail when a require is removed); each later task lands a chunk of the new file and re-runs the gates; Task 8 runs the full verification (gates, key diff, manual LuCI checklist, no stray files). The file is written in place, one chunk at a time; the gates run against the whole file after every chunk.
 
-### [ ] Task 1: Baseline — capture the key list, pin the gates
+### [x] Task 1: Baseline — capture the key list, pin the gates
 
 **Files:**
 
 - Create: `${TMPDIR:-/tmp}/tt12-keys-current.txt` (temporary reference, not committed)
 
-- [ ] **Step 1: Capture the translation-key reference**
+- [x] **Step 1: Capture the translation-key reference**
 
 Extract the literal `_()` key set from the current (inherited) file and store it outside the repo:
 
@@ -190,7 +190,7 @@ wc -l "${TMPDIR:-/tmp}/tt12-keys-current.txt"
 
 Expected: **89** unique keys (48 DIAG_TEXT entries plus the UI/verdict/counts/tool strings). This reference is the equivalence oracle for translation keys.
 
-- [ ] **Step 2: Prove the syntax gate fails on broken input (negative control)**
+- [x] **Step 2: Prove the syntax gate fails on broken input (negative control)**
 
 Run the ci.yml "JavaScript syntax" check against the current file:
 
@@ -205,7 +205,7 @@ for (const f of process.argv.slice(1)) {
 
 Expected: PASS (`ok: …diagnostics.js`). Then temporarily corrupt the file (e.g. insert an unbalanced brace), re-run, confirm FAIL, and restore the file with `git checkout -- <file>`. This proves the gate catches syntax errors.
 
-- [ ] **Step 3: Prove the require gate fails on a missing require (negative control)**
+- [x] **Step 3: Prove the require gate fails on a missing require (negative control)**
 
 Run the ci.yml "LuCI module requires" logic for this file:
 
@@ -223,23 +223,23 @@ exit "$fail"
 
 Expected: PASS (the file uses `view`, `rpc`, `dom`, `ui` and declares all four). Temporarily delete the `'require ui'` line, re-run, confirm FAIL on `ui`, restore via `git checkout -- <file>`.
 
-- [ ] **Step 4: Record the response-shape notes**
+- [x] **Step 4: Record the response-shape notes**
 
 In a comment-free scratch note (or this plan's Research section — already done), confirm the four RPC shapes from TT-09 that the view consumes (see Research → RPC contracts), including the pinned ambiguities: `ping` returns `{results: [...]}` with `avg: null` on total loss; `check_domain` may return `{error}`; `diagnose` emits the exact label strings from the DIAG_TEXT table.
 
 **Verification**: `wc -l` shows 89 reference keys; both negative controls failed and were reverted (`git status` clean); the four RPC shapes are written down and match TT-09.
 
-### [ ] Task 2: Scaffold — requires, RPC declarations, save handlers, page shell
+### [x] Task 2: Scaffold — requires, RPC declarations, save handlers, page shell
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Write the scaffold**
+- [x] **Step 1: Write the scaffold**
 
 Replace the file with new expression that contains: `'use strict';`, `'require view';`, `'require rpc';`, `'require dom';`, `'require ui';`, four `rpc.declare` declarations (object `luci.trusttunnel`; methods `diagnose` with no params, `ping` with `params: ['target']`, `probe` with no params, `check_domain` with `params: ['domain']`), a `view.extend({...})` returning `handleSaveApply: null`, `handleSave: null`, `handleReset: null`, and a minimal `render()` returning the page shell: `cbi-map` div with the `<h2>` "Diagnostics" and the four `cbi-section` blocks (diagnose section with intro paragraph + "Check again" button + an empty container div; domain section with heading, intro, input + "Check" button + container; ping section with heading, intro, "Ping" button + container; probe section with heading, intro, "Compare" button + container). Use the exact UI strings from the Research → inherited inventory. No handler logic yet.
 
-- [ ] **Step 2: Run the gates**
+- [x] **Step 2: Run the gates**
 
 ```sh
 node -e '<syntax check one-liner from Task 1>' packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js
@@ -249,105 +249,105 @@ Expected: PASS. Then run the require gate from Task 1 — Expected: PASS (all fo
 
 **Verification**: both gates pass on the new scaffold; the page shell and all UI strings match the inventory list.
 
-### [ ] Task 3: Verdict banner + group rendering + DIAG_TEXT map
+### [x] Task 3: Verdict banner + group rendering + DIAG_TEXT map
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Add the display-data tables and the render helper**
+- [x] **Step 1: Add the display-data tables and the render helper**
 
 Inside the existing file add, with new expression: the verdict-class map (`ok`→`success`, `warn`→`warning`, `fail`→`danger`, `skip`→`info`), the verdict-word function (four `_()` cases, fallback "not checked"), the per-check mark helper (fixed-width bold span; word+color per status from the inventory; unknown status renders the raw word), the group-title map (five `_()` titles with raw fallback), the full 48-entry `DIAG_TEXT` map (exact backend strings from the Research table, each mapped to its literal `_()` call — including `/dev/net/tun present` → `_('present')`), and the lookup helper `dtr(s)` (mapped translation when truthy and present, else raw string or `''`).
 
-- [ ] **Step 2: Add the grouped renderer**
+- [x] **Step 2: Add the grouped renderer**
 
 Add a render helper that takes a check list and produces the group tables: iterate the fixed order `config, prereq, service, kernel, network`, bucket checks by `group`, skip empty groups, render one `<h4>` group title + one table per group; per check a row with the mark cell, `dtr(label)`, `dtr(detail)`, plus a full-width hint row with `dtr(hint)` in `<em>` when the hint is truthy. No code copied from the inherited file — write it from this contract.
 
-- [ ] **Step 3: Run the gates**
+- [x] **Step 3: Run the gates**
 
 Run the syntax check and the require gate. Expected: both PASS (the new helpers use only `E`, `_`, and DOM element construction).
 
 **Verification**: gates pass; the DIAG_TEXT table in the file matches the 48-entry contract table exactly (compare with the Research table); `dtr` fallback behavior verified by a quick reading pass.
 
-### [ ] Task 4: Diagnose flow — banner, fail/warn-first, toggle, immediate run + "Check again"
+### [x] Task 4: Diagnose flow — banner, fail/warn-first, toggle, immediate run + "Check again"
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Add the diagnose handlers**
+- [x] **Step 1: Add the diagnose handlers**
 
 Add, with new expression: `handleDiagnose(container)` — replace container content with the spinning `<p>` "Running checks — this takes a few seconds…", call `callDiagnose()`, on success render the banner + check list, on rejection render a `div.alert-message.danger` with the error message (never leave the spinner); `renderDiagnose(res)` — build the `alert-message` banner (verdict class, `<strong>` verdict word, `<br>`, counts line with `_('checks passed: %d, remarks: %d, problems: %d, skipped: %d').format(counts.ok||0, counts.warn||0, counts.fail||0, counts.skip||0)`), split checks into problems (`fail`/`warn`) and the rest, render problems via the grouped renderer, and — when any rest exists — a hidden box (`display:none`) with the rest rendered, plus the toggle button (`cbi-button`): label "Show the checks that passed" when problems exist else "Show all checks"; click toggles the box display and the label to "Hide" / back.
 
-- [ ] **Step 2: Wire render()**
+- [x] **Step 2: Wire render()**
 
 In `render()`, call the diagnose handler immediately on the diagnose container (the check runs on page open), and bind the "Check again" button to the same handler. Use the exact strings from the inventory ("Running checks — this takes a few seconds…", "Check again").
 
-- [ ] **Step 3: Run the gates**
+- [x] **Step 3: Run the gates**
 
 Run the syntax check and the require gate. Expected: both PASS (`dom.content` keeps `'require dom'` satisfied).
 
 **Verification**: gates pass; reading pass confirms: banner format, global fail/warn-first split, hidden box + toggle labels, immediate run, "Check again" re-runs, catch paths render an error instead of a stuck spinner.
 
-### [ ] Task 5: "Check a domain" tool
+### [x] Task 5: "Check a domain" tool
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Add the domain handler and bindings**
+- [x] **Step 1: Add the domain handler and bindings**
 
 Add, with new expression: `handleCheckDomain(input, container)` — trim the input value, no-op when empty; replace container content with the spinning `<p>` "Checking…"; call `callCheckDomain(d)`; on `res.error` render a plain `<p>` with it; else render the result table with rows "Normalized" (`<code>` with `res.normalized`), "Verdict" (badge span: green "through the tunnel" when `res.verdict` starts with `tunnel`, else red "direct"), "Why" (raw `res.reason`); on rejection render a plain `<p>` with the error. In `render()`, bind the "Check" button via `ui.createHandlerFn` and add a `keydown` listener on the input so Enter (with `preventDefault`) triggers the same handler.
 
-- [ ] **Step 2: Run the gates**
+- [x] **Step 2: Run the gates**
 
 Run the syntax check and the require gate. Expected: both PASS (the button handler keeps `ui.` usage and `'require ui'` satisfied).
 
 **Verification**: gates pass; reading pass confirms trim/no-op, Enter submission, error paragraph, and the three result rows with the tunnel-first badge logic.
 
-### [ ] Task 6: "Ping the server" tool
+### [x] Task 6: "Ping the server" tool
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Add the ping handler and binding**
+- [x] **Step 1: Add the ping handler and binding**
 
 Add, with new expression: `handlePing(container)` — replace container content with the spinning `<p>` "Pinging…"; call `callPing('')`; on `res.error` render a plain `<p>`; else render a table with the header row ("Host", "Loss", "min / avg / max") and one row per `res.results` entry: host, `loss + '%'`, and `min + ' / ' + avg + ' / ' + max + ' ms'`, or the em dash `—` when `avg === null`; on rejection render a plain `<p>` with the error. Bind the "Ping" button in `render()` via `ui.createHandlerFn`.
 
-- [ ] **Step 2: Run the gates**
+- [x] **Step 2: Run the gates**
 
 Run the syntax check and the require gate. Expected: both PASS.
 
 **Verification**: gates pass; reading pass confirms the empty-target call (`''`), the error branch, the header, and the `null`-avg em dash.
 
-### [ ] Task 7: "Compare the external address" tool
+### [x] Task 7: "Compare the external address" tool
 
 **Files:**
 
 - Modify: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Add the probe handler and binding**
+- [x] **Step 1: Add the probe handler and binding**
 
 Add, with new expression: `handleProbe(container)` — replace container content with the spinning `<p>` "Checking…"; call `callProbe()`; render a two-row table: "Through the tunnel" and "Directly", each cell showing the IP in `<code>` when `res.tunnel.ip` / `res.direct.ip` is truthy, else the corresponding error in a red span; on rejection render a plain `<p>` with the error. Bind the "Compare" button in `render()` via `ui.createHandlerFn`.
 
-- [ ] **Step 2: Run the gates**
+- [x] **Step 2: Run the gates**
 
 Run the syntax check and the require gate. Expected: both PASS.
 
 **Verification**: gates pass; reading pass confirms both rows, the ip-vs-error cell logic, and the catch path.
 
-### [ ] Task 8: Full verification — gates, key diff, manual LuCI checklist, repo hygiene
+### [x] Task 8: Full verification — gates, key diff, manual LuCI checklist, repo hygiene
 
 **Files:**
 
 - Inspect: `packages/luci-app-trusttunnel/htdocs/luci-static/resources/view/trusttunnel/diagnostics.js`
 
-- [ ] **Step 1: Run both CI gates**
+- [x] **Step 1: Run both CI gates**
 
 Run the exact syntax-check and require-gate commands from Task 1 against the final file. Expected: both PASS.
 
-- [ ] **Step 2: Diff the translation-key set**
+- [x] **Step 2: Diff the translation-key set**
 
 ```sh
 grep -ohE "_\\('[^']*'\\)" \
@@ -357,7 +357,7 @@ grep -ohE "_\\('[^']*'\\)" \
 
 Expected: no output (exit 0) — the new file's `_()` key set is identical to the inherited file's (89 keys): the 48-entry DIAG_TEXT map is kept as-is including the stale 'Run install.sh — the package does not ship the client binary.' entry, and no new keys were added for the unmapped 'Routing profile' strings or the 'The client is a dependency of the package; reinstall trusttunnel-client.' hint — all of those render raw.
 
-- [ ] **Step 3: Manual LuCI checklist**
+- [x] **Step 3: Manual LuCI checklist**
 
 On a device/rootfs with the package installed, load Diagnostics and verify against the current view's behavior:
 
@@ -371,7 +371,7 @@ On a device/rootfs with the package installed, load Diagnostics and verify again
 8. Routing profile assigned (on the Settings page): the diagnose list shows the extra ok "Routing profile" check — label and "<profile> (<mode>)" detail render raw (untranslated); the total check count is at the 18-entry max and the counts include the extra ok.
 9. No routing profile assigned: the "Routing profile" check renders as a warn with the raw detail "none — legacy full-tunnel mode" and the raw hint "Assign a routing profile on the Settings page to control what goes through the tunnel."; the verdict/counts reflect the remark, and the check list still reaches the 18-entry max (the warn row stands in for the ok row, the count does not drop).
 
-- [ ] **Step 4: Repo hygiene**
+- [x] **Step 4: Repo hygiene**
 
 ```sh
 git status --short

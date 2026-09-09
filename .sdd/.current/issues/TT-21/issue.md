@@ -1,6 +1,6 @@
 # Issue TT-21: README.md
 
-- **Status**: Approved
+- **Status**: Implemented
 - **PRD**: `../../prd.md`
 - **Blocked by**: none (independent; may run in parallel)
 - **Effort**: S–M
