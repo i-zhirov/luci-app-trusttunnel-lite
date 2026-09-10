@@ -1,6 +1,6 @@
 # Issue TT-11: settings.js view
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-09
 - **Effort**: M

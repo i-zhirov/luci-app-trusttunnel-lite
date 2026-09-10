@@ -1,6 +1,6 @@
 # Issue TT-13: Russian translation (.po)
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-10, TT-11, TT-12 (the `msgid` set must match the
   rewritten views)

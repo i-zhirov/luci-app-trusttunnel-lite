@@ -1,6 +1,6 @@
 # Issue TT-05: routing (nft/ip management)
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-02
 - **Effort**: M–L

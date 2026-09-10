@@ -99,9 +99,8 @@ tabs:
   what your server produces — the text of a config file, or a `tt://` link —
   and populates each endpoint field the server is able to fill: addresses,
   the TLS host name, credentials, the transport, `custom_sni`,
-  `client_random`, plus anti-DPI, post-quantum, IPv6 and
-  certificate-verification switches, and the DNS upstreams. Everything can
-  also be typed by hand.
+  `client_random`, plus anti-DPI, IPv6 and certificate-verification
+  switches, and the DNS upstreams. Everything can also be typed by hand.
 - **Routing profiles**: the Default profile (VPN mode) is already seeded
   here. Every profile gets a mode — **VPN** (everything is tunneled except
   the bypass-list entries) or **Bypass** (only the VPN-list entries are

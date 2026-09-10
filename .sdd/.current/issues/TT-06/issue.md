@@ -1,6 +1,6 @@
 # Issue TT-06: init.d service script
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-03, TT-04, TT-05
 - **Effort**: L

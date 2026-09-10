@@ -1,6 +1,6 @@
 # Issue TT-22: License flip
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: TT-01..TT-21 (the tree must be clean of inherited
   expression first)

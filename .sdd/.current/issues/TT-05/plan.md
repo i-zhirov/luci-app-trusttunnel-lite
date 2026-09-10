@@ -1,7 +1,7 @@
 # Implementation Plan: TT-05 routing (nft/ip management)
 
 - **Created**: 2026-09-08
-- **Status**: Implemented
+- **Status**: Validated
 - **Issue**: `.sdd/.current/issues/TT-05/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash

@@ -1,6 +1,6 @@
 # Issue TT-15: default UCI config
 
-- **Status**: Implemented
+- **Status**: Validated
 - **PRD**: `../../prd.md`
 - **Blocked by**: none (independent; may run in parallel)
 - **Effort**: S

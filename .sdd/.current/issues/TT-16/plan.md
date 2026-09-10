@@ -1,7 +1,7 @@
 # Implementation Plan: ACL manifest
 
 - **Created**: 2026-09-08
-- **Status**: Implemented
+- **Status**: Validated
 - **Issue**: `.sdd/.current/issues/TT-16/issue.md`
 - **PRD**: `.sdd/.current/prd.md`
 - **Model**: tokenguard/deepseek-v4-flash
