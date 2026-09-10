@@ -77,6 +77,12 @@ jobs:
       - name: Run the unit test suite
         run: sh tests/run.sh
 
+      # The rpcd backend's behavioral contract test (goldens captured from
+      # the pre-reimplementation backend, docker-gated; SKIPs without
+      # docker, so the plain suite stays runnable anywhere).
+      - name: Run the backend contract test
+        run: sh tests/backend/test_backend_contract.sh
+
       # Shellcheck is pinned to v0.11.0 so the gate is stable across
       # runner image updates; the docker invocation keeps the check
       # reproducible on any machine. The list covers the contract files
@@ -102,7 +108,7 @@ jobs:
             packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel \
             packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel \
             tests/test_deps.sh
-          for extra in tests/test_hotplug.sh tests/test_uci_defaults.sh tests/install-harness.sh; do
+          for extra in tests/test_hotplug.sh tests/test_uci_defaults.sh tests/install-harness.sh tests/backend/test_backend_contract.sh; do
             [ -f "$extra" ] && set -- "$@" "$extra"
           done
           docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh --severity=error "$@"

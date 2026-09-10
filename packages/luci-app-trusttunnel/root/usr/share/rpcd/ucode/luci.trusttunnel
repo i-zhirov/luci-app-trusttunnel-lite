@@ -238,7 +238,7 @@ return {
 				return {
 					enabled: uciget('trusttunnel.main.enabled') == '1',
 					running: running,
-					device: rs.device,
+					device: length(rs.device) ? rs.device : null,
 					device_up: rs.device_up,
 					rule: rs.rule,
 					table: rs.table,
@@ -623,7 +623,10 @@ return {
 				let cached = readfile(VERSION_CACHE);
 
 				if (cached != null) {
-					let j = json(cached);
+					// A corrupted or foreign cache file must not crash the
+					// update check: json() throws on malformed input.
+					let j = null;
+					try { j = json(cached); } catch (e) { }
 					if (type(j) == 'object')
 						cache = j;
 				}
@@ -645,7 +648,11 @@ return {
 					let r = sh_out('curl -fsS --max-time 15 ' + RELEASE_URL);
 
 					if (r.code == 0) {
-						let j = json(r.out);
+						// The endpoint is not a JSON API: any non-JSON body
+						// (an error page, a proxy notice) means "no answer",
+						// not a crash.
+						let j = null;
+						try { j = json(r.out); } catch (e) { }
 						let tag = type(j) == 'object' ? j.tag_name : null;
 
 						if (type(tag) == 'string' && length(tag)) {
@@ -788,7 +795,7 @@ return {
 				if (!length(res.hostname) && !length(res.username) &&
 				    !length(res.password) && !length(res.certificate) &&
 				    !length(res.addresses))
-					return { error: 'setup_wizard failed' };
+					return { error: 'setup_wizard produced no recognisable endpoint fields' };
 
 				return res;
 			}

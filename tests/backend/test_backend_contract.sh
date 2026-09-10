@@ -123,6 +123,7 @@ echo ttlab0 > /var/etc/trusttunnel/device
 cat > /usr/bin/curl <<"EOF"
 #!/bin/sh
 case "$*" in
+	*releases/latest*) echo "{\"tag_name\":\"1.0.17\",\"name\":\"v1.0.17\"}" ;;
 	*--interface*) echo "198.51.100.7" ;;
 	*) echo "203.0.113.77" ;;
 esac
