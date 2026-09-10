@@ -72,3 +72,5 @@ define Build/Compile
 	chmod 0755 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/uci-export
 	chmod 0644 $(PKG_BUILD_DIR)/root/usr/libexec/trusttunnel/records.sh
 endef
+
+# call BuildPackage - OpenWrt buildroot signature
