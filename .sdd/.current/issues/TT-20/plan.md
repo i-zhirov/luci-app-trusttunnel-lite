@@ -588,6 +588,10 @@ Run: `git diff --stat .github/workflows/release.yml` and read the diff — Expec
 
 **Verification**: complete file parses and lints clean; matrix counts re-verified on the new file; full checklist green; diff shows a full re-expression with zero copied YAML/comments.
 
+> **Runbook**: the exact dispatch instructions, per-job checklist, live
+> install assertions, cleanup and closing steps are in
+> `live-run-checklist.md` in this directory.
+
 ### [ ] Task 9: Final verification — workflow_dispatch release from a test tag + live install
 
 > **Note (2026-09-09, implementation):** the live run cannot execute in
