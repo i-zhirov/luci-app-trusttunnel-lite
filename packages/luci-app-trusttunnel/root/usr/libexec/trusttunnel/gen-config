@@ -25,19 +25,22 @@ TT_LIBDIR="${TT_LIBDIR:-$(dirname "$0")}"
 TT_RECORDS=${1:?usage: gen-config <records-file> [pem-file]}
 
 # tt_esc <value> — print the value escaped for a TOML basic string:
-# backslashes first, then double quotes.
+# backslashes first, then double quotes. sed, not awk: the awk gsub
+# replacement semantics differ between gawk and BSD awk for backslashes
+# (gawk follows POSIX and halves them, BSD awk does not), while sed's
+# replacement behaves identically everywhere.
 tt_esc() {
-    printf '%s\n' "$1" | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); print }'
+    printf '%s\n' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
 # tt_array <key> — print every record for the key as one TOML array:
 # each item escaped like a scalar, items joined with ", " inside square
 # brackets; an absent key renders the empty array.
 tt_array() {
-    tt_list "$1" | awk 'BEGIN { printf "[" }
+    # Each item escaped like a scalar; sed for the same portability
+    # reason as tt_esc.
+    tt_list "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk 'BEGIN { printf "[" }
         {
-            gsub(/\\/, "\\\\")
-            gsub(/"/, "\\\"")
             if (item++) printf ", "
             printf "\"%s\"", $0
         }
@@ -102,9 +105,11 @@ printf 'skip_verification = %s\n' "$(tt_bool endpoint.skip_verification)"
 if [ "$#" -gt 1 ] && [ -s "$2" ]; then
     # Multi-line literal: the file content normalized so the closing
     # delimiter always starts on its own line.
-    printf 'certificate = \x27\x27\x27\n'
+    # The literal delimiters in double quotes: the \x27 hex escape is
+    # not portable across printf implementations (bash yes, dash no).
+    printf "certificate = '''\n"
     awk 1 "$2"
-    printf '\x27\x27\x27\n'
+    printf "'''\n"
 else
     printf 'certificate = ""\n'
 fi
