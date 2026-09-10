@@ -408,6 +408,9 @@ return {
 			call: function() {
 				let rec = records();
 				let rs = routing_status();
+				// The routing checks report "absent" only while the config
+				// is applied; without the records file they are skipped.
+				let applied = access(RECORDS) != null;
 				let checks = [];
 
 				let host = first(rec, 'endpoint.hostname', '');
@@ -471,7 +474,7 @@ return {
 				if (enabled)
 					push(checks, check('service', 'Enabled', 'ok', 'yes', ''));
 				else
-					push(checks, check('service', 'Enabled', 'fail', 'no',
+					push(checks, check('service', 'Enabled', 'warn', 'no',
 						'Turn on Enable on the Settings page, then press Start.'));
 
 				if (running)
@@ -489,7 +492,7 @@ return {
 				let dev_sys = length(dev) ? '/sys/class/net/' + dev : '';
 
 				if (!length(dev)) {
-					push(checks, check('kernel', 'Tunnel device', 'skip', 'the client has not created one',
+					push(checks, check('kernel', 'Tunnel device', running ? 'fail' : 'skip', 'the client has not created one',
 						'The device belongs to the client, not to this package. Read the client log below.'));
 				} else if (access(dev_sys) == null) {
 					push(checks, check('kernel', 'Tunnel device', 'fail', 'the client has not created one',
@@ -525,23 +528,23 @@ return {
 				if (rs.rule)
 					push(checks, check('kernel', 'Routing rule', 'ok', 'present', ''));
 				else
-					push(checks, check('kernel', 'Routing rule', 'fail', 'absent', ''));
+					push(checks, check('kernel', 'Routing rule', applied ? 'fail' : 'skip', 'absent', ''));
 
 				if (rs.table)
 					push(checks, check('kernel', 'Routing table', 'ok', 'present', ''));
 				else
-					push(checks, check('kernel', 'Routing table', 'fail', 'absent', ''));
+					push(checks, check('kernel', 'Routing table', applied ? 'fail' : 'skip', 'absent', ''));
 
 				if (rs.nft)
 					push(checks, check('kernel', 'nftables table', 'ok', 'present', ''));
 				else
-					push(checks, check('kernel', 'nftables table', 'fail', 'absent', ''));
+					push(checks, check('kernel', 'nftables table', applied ? 'fail' : 'skip', 'absent', ''));
 
 				let fw = sh_out('nft list ruleset');
 				if (index(fw.out, 'trusttunnel') >= 0)
 					push(checks, check('kernel', 'Firewall zone', 'ok', 'loaded in fw4', ''));
 				else
-					push(checks, check('kernel', 'Firewall zone', 'fail', 'not in the live ruleset',
+					push(checks, check('kernel', 'Firewall zone', 'warn', 'not in the live ruleset',
 						'Run /etc/init.d/firewall reload — traffic into the tunnel is dropped without the zone.'));
 
 				// --- Network ---
@@ -559,7 +562,7 @@ return {
 							'Check the address, and that the router itself has internet access.'));
 				}
 
-				if (length(dev) && access(dev_sys) != null) {
+				if (running && length(dev)) {
 					let via = sh_out('curl -fsS --max-time 8 --interface ' + shq(dev) + ' https://api.ipify.org');
 					let plain = sh_out('curl -fsS --max-time 8 https://api.ipify.org');
 					let tip = trim(via.out);
@@ -666,14 +669,13 @@ return {
 								sh('/usr/bin/logger -t trusttunnel "failed to write the update cache"');
 						}
 					} else if (cache != null && type(cache.tag) == 'string') {
-						// Network failure: fall back to the cached answer,
-						// marked stale, and refresh the timestamp so the
-						// next check does not hammer the network again.
+						// Network failure: fall back to the cached answer
+						// with its original timestamp, marked stale. The
+						// cache file is left untouched — the oracle does
+						// not refresh it on failure.
 						res.latest = cache.tag;
-						res.checked_at = now;
+						res.checked_at = cache.checked_at;
 						res.stale = true;
-
-						writefile(VERSION_CACHE, sprintf('%J', { tag: cache.tag, checked_at: now }));
 					}
 				}
 
@@ -692,7 +694,7 @@ return {
 			call: function(req) {
 				let text = req.args?.text ?? '';
 
-				if (!length(text))
+				if (!length(trim(text)))
 					return { error: 'configuration text is empty' };
 
 				if (access('/opt/trusttunnel_client/setup_wizard') == null)
