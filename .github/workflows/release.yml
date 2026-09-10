@@ -276,7 +276,9 @@ jobs:
         run: |
           mkdir -p dist
           if [ "${{ matrix.ext }}" = apk ]; then
-            f="$(find out/bin/ -maxdepth 1 -name 'trusttunnel-client*.apk' -print -quit)"
+            # The SDK output is nested (out/bin/packages/<target>/<feed>/):
+            # the find must recurse. The apk file name carries no arch.
+            f="$(find out/bin/ -name 'trusttunnel-client*.apk' -print -quit)"
             if [ -z "$f" ]; then
               echo "::error::no trusttunnel-client apk was built for ${{ matrix.arch }}"
               exit 1
@@ -288,7 +290,7 @@ jobs:
             cp "$f" "dist/$(basename "$f" .apk)-${{ matrix.arch }}.apk"
             printf '%s\n' "${{ matrix.arch }}" > "dist/ARCH-${{ matrix.arch }}"
           else
-            f="$(find out/bin/ -maxdepth 1 -name 'trusttunnel-client*.ipk' -print -quit)"
+            f="$(find out/bin/ -name 'trusttunnel-client*.ipk' -print -quit)"
             if [ -z "$f" ]; then
               echo "::error::no trusttunnel-client ipk was built for ${{ matrix.arch }}"
               exit 1
