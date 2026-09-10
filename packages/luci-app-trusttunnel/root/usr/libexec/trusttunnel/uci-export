@@ -57,10 +57,14 @@ find_profile() {
 }
 
 # The assigned profile is resolved by NAME, so an empty or stale reference
-# exports no profile records at all.
+# exports no profile records at all. The guard is load-bearing: without it
+# an unnamed profile section (empty `name` option) would match the empty
+# reference and leak its mode/rules into the records.
 profile_want=$(uci -q get trusttunnel.endpoint.routing_profile 2>/dev/null) || profile_want=""
 profile_sec=""
-config_foreach find_profile routing_profile
+if [ -n "$profile_want" ]; then
+	config_foreach find_profile routing_profile
+fi
 
 # schema-keys: routing_profile.name routing_profile.mode routing_profile.vpn_rules routing_profile.bypass_rules
 
