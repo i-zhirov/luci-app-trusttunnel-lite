@@ -568,7 +568,13 @@ jobs:
           for d in site/apk/*/; do
             printf '%s\n' "- [$(basename "$d")]($(basename "$d")/)" >> "$arch_list"
           done
-          sed "/__ARCH_LIST__/{r $arch_list; d}" repo-site/apk-index.md > site/apk/index.md
+          # r swallows the rest of its line: file read and delete must
+          # sit on separate lines inside the braces (see the __FILES__
+          # substitution below).
+          sed "/__ARCH_LIST__/{
+            r $arch_list
+            d
+          }" repo-site/apk-index.md > site/apk/index.md
           rm -f "$arch_list"
 
           # The opkg index is fully static.
