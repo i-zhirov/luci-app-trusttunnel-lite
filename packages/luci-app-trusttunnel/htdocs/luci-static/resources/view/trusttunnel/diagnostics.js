@@ -212,7 +212,7 @@ var renderDiagnose = function (res) {
 };
 
 var handleDiagnose = function (container) {
-	dom.content(container, E('p', _('Running checks — this takes a few seconds…')));
+	dom.content(container, E('p', { 'class': 'spinning' }, _('Running checks — this takes a few seconds…')));
 
 	callDiagnose().then(function (res) {
 		dom.content(container, renderDiagnose(res));
@@ -227,7 +227,7 @@ var handleCheckDomain = function (input, container) {
 	if (!d)
 		return;
 
-	dom.content(container, E('p', _('Checking…')));
+	dom.content(container, E('p', { 'class': 'spinning' }, _('Checking…')));
 
 	callCheckDomain(d).then(function (res) {
 		if (res.error) {
@@ -261,7 +261,7 @@ var handleCheckDomain = function (input, container) {
 };
 
 var handlePing = function (container) {
-	dom.content(container, E('p', _('Pinging…')));
+	dom.content(container, E('p', { 'class': 'spinning' }, _('Pinging…')));
 
 	callPing('').then(function (res) {
 		if (res.error) {
@@ -292,7 +292,7 @@ var handlePing = function (container) {
 };
 
 var handleProbe = function (container) {
-	dom.content(container, E('p', _('Checking…')));
+	dom.content(container, E('p', { 'class': 'spinning' }, _('Checking…')));
 
 	callProbe().then(function (res) {
 		var cell = function (entry) {

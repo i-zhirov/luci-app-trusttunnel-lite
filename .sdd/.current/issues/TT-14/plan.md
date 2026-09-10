@@ -853,3 +853,5 @@ container user or git refuses it (dubious ownership) — mounted a HOME with a
 safe.directory gitconfig. Docker Desktop/colima bind mounts are write-hostile:
 artifacts were extracted via `docker cp` after each build (the entrypoint's
 `mv bin/ /artifacts/` fails with EACCES on the mount).
+
+**Rootfs upgrade-survival smoke (2026-09-10, validation):** `opkg install --force-reinstall --force-depends --dest /tmp/r <new-22.03 ipk>` over a pre-existing `/tmp/r/etc/config/trusttunnel` containing "user config value" → the config survives the reinstall byte-for-byte (conffiles protection verified on the 22.03 rootfs). Additionally: the new-tree used for the SDK legs was the post-marker tree (a5c376b + the restored `call BuildPackage` marker, then a fresh commit + tag) — the Execution Record's "a5c376b" label refers to the base snapshot, not the built tree.
