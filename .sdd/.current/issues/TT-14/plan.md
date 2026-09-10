@@ -382,7 +382,7 @@ satisfiable and means exactly: the rewrite changed no metadata.
 - Create (ephemeral, outside the tree): `.build-out/golden-22.03/`,
   `.build-out/golden-25.12/` artifacts + transcripts
 
-- [ ] **Step 1: Confirm the baseline state**
+- [x] **Step 1: Confirm the baseline state**
 
 Run:
 
@@ -403,7 +403,7 @@ contract, not from these files). Consequence: the official v1.0.13 release
 assets (built at `1fdf82c` with the OLD depends, Research §4) cannot serve
 as the golden — the golden is built from THIS tree in Step 2.
 
-- [ ] **Step 2: Build the golden from the current (pre-rewrite) tree**
+- [x] **Step 2: Build the golden from the current (pre-rewrite) tree**
 
 Replicate the release.yml build job locally (the action's exact steps, per
 Research §5) with the repo mounted as the feed — the Makefile is still the
@@ -434,7 +434,7 @@ Expected: both legs succeed (the action's `package/luci-app-trusttunnel/check`
 `luci-i18n-trusttunnel-ru` files. These artifacts and their transcripts are
 the golden — they stay in the gitignored `.build-out/`, never committed.
 
-- [ ] **Step 3: Extract the golden metadata transcripts**
+- [x] **Step 3: Extract the golden metadata transcripts**
 
 ```sh
 cd .build-out/golden-22.03
@@ -466,7 +466,7 @@ Record the transcripts' paths in the task notes.
 
 - Modify: `packages/luci-app-trusttunnel/Makefile`
 
-- [ ] **Step 1: Write the replacement from the contract only**
+- [x] **Step 1: Write the replacement from the contract only**
 
 CLEAN-ROOM: do NOT open the current `Makefile` while writing. Work from the
 issue's Contract section, the Technical Context, and the Entity table above.
@@ -569,7 +569,7 @@ define Build/Compile
 endef
 ```
 
-- [ ] **Step 2: Self-check the rewrite**
+- [x] **Step 2: Self-check the rewrite**
 
 Run: `git diff packages/luci-app-trusttunnel/Makefile`
 
@@ -589,7 +589,7 @@ reviewed; no `*.old` files; no other tracked file touched.
 - Run: `sh` one-liner version matrix, `grep -n` ordering/value checklist,
   `git diff --stat`
 
-- [ ] **Step 1: Version-derivation matrix**
+- [x] **Step 1: Version-derivation matrix**
 
 Run the derivation exactly as the Makefile computes it, in three states
 (the expression is fork work; this pins its contract behavior):
@@ -613,7 +613,7 @@ Note for the record: an intermediate commit (between tags) yields the last
 reachable tag, NOT the fallback — the fallback fires only when `git describe`
 fails (no reachable tags). This matches the release.yml assertion model.
 
-- [ ] **Step 2: Ordering and value checklist (grep the new file)**
+- [x] **Step 2: Ordering and value checklist (grep the new file)**
 
 ```sh
 f=packages/luci-app-trusttunnel/Makefile
@@ -638,14 +638,14 @@ split, with no `kmod-tun`/`ca-bundle` in the app's declaration (a stray
 repeat would fail the negative greps above AND tests/test_deps.sh); six
 `chmod 0755` lines; `records.sh` chmod 0644; SPDX header present.
 
-- [ ] **Step 3: Diff hygiene**
+- [x] **Step 3: Diff hygiene**
 
 Run: `git diff --stat` and `git status --porcelain`
 
 Expected: exactly one modified file; no mode changes; `.build-out/` not
 listed (gitignored).
 
-- [ ] **Step 4: Run the fork's dependency test suite**
+- [x] **Step 4: Run the fork's dependency test suite**
 
 Run: `sh tests/run.sh`
 
@@ -669,7 +669,7 @@ green — the rewrite satisfies the contract before any expensive build.
 - Run: docker SDK builds (22.03.7 ipk leg, 25.12.5 apk leg); transcript
   diffs; rootfs install/upgrade smoke
 
-- [ ] **Step 1: Build both legs via the local SDK recipe**
+- [x] **Step 1: Build both legs via the local SDK recipe**
 
 Replicate the release.yml build job locally (the action's exact steps, per
 Research §5): clone `openwrt/gh-action-sdk` into `.build-out/sdk/`, build its
@@ -703,7 +703,7 @@ filename assertion itself binds only on tag pushes; do not push tags during
 TT-14). The version must match the golden's (Task 1): both builds sit on the
 same commit.
 
-- [ ] **Step 2: Diff the new metadata transcripts against the golden**
+- [x] **Step 2: Diff the new metadata transcripts against the golden**
 
 Extract the new transcripts with the Task 1 Step 3 commands (into
 `.build-out/artifacts-22.03/new-*` and `.build-out/artifacts-25.12/new-*`),
@@ -729,7 +729,7 @@ metadata-bearing transcripts (control, conffiles, and the modes of the six
 chmod'd files) and re-derive the full file list from the current tree
 (Research §7).
 
-- [ ] **Step 3: Rootfs install + upgrade-survival smoke**
+- [x] **Step 3: Rootfs install + upgrade-survival smoke**
 
 ```sh
 # apk leg (25.12): install the built apk, check the protected list and modes
@@ -762,7 +762,7 @@ show correct conffiles/modes; config survives reinstall.
 
 - Run: `git status`, `git diff --name-only`, final summary
 
-- [ ] **Step 1: Clean-tree check (PRD requirement)**
+- [x] **Step 1: Clean-tree check (PRD requirement)**
 
 Run: `git status` and `git diff --name-only`
 
@@ -772,7 +772,7 @@ is gitignored and must remain untracked); nothing else staged. Confirm with
 `git status --ignored --short .build-out` that the oracle artifacts are
 ignored, not accidentally tracked.
 
-- [ ] **Step 2: Gate summary**
+- [x] **Step 2: Gate summary**
 
 Record in the task notes: Task 1 baseline (golden transcripts from the
 rebased-tree SDK build + release.yml as the live oracle), Task 3 static
@@ -815,3 +815,41 @@ the diff).
 5. **Inherited trailing comment** `# call BuildPackage - OpenWrt buildroot
    signature` is not part of the contract and has no function (luci.mk
    invokes BuildPackage itself) — dropped in the rewrite.
+
+## Execution Record (2026-09-10 — full verification completed)
+
+The first implementation attempt was interrupted (disk space) mid-verification;
+this record documents the complete re-verification.
+
+**SDK build legs (all four, via the gh-action-sdk recipe in docker):**
+
+| Leg | Feed | Result |
+| --- | --- | --- |
+| golden-22.03 | 737c761 (pre-rewrite Makefile, GPL-2.0-only) | `luci-app-trusttunnel_1.0.15_all.ipk` — Version 1.0.15, Depends = libc, trusttunnel-client, luci-base, ip-full, nftables, curl, ucode-mod-math; conffiles = /etc/config/trusttunnel; six scripts 0755, records.sh 0644 |
+| golden-25.12 | 737c761 | `luci-app-trusttunnel-1.0.15-r1.apk` — adbdump: name/version/arch/depends/conffiles/modes verified |
+| new-22.03 | a5c376b (rewritten Makefile) | `luci-app-trusttunnel_1.0.15_all.ipk` |
+| new-25.12 | a5c376b | `luci-app-trusttunnel-1.0.15-r1.apk` |
+
+**Metadata byte-diff golden vs new — IDENTICAL except the three intentional fields:**
+- License: GPL-2.0-only → Apache-2.0 (the TT-22 flip; golden was captured pre-flip)
+- SourceDateEpoch / apk mtimes / content hashes / Installed-Size (build time + the rewritten code's sizes)
+- Version (1.0.15 / 1.0.15-r1), Depends (the new split), Architecture (all), Section, conffiles, file paths and modes: **identical on both package managers**.
+
+**Bug found and fixed by this verification:** the clean-room rewrite dropped the
+trailing `# call BuildPackage - OpenWrt buildroot signature` comment. That comment
+is NOT decoration: the OpenWrt feed scan (`include/scan.mk`, GREP_STRING =
+`call (Build/DefaultTargets|BuildPackage|KernelPackage)`) discovers packages by
+grepping Makefile text, so without it the package vanished from the SDK feed
+scan ("No feed for package 'luci-app-trusttunnel' found") and the release build
+job would fail. Restored as the Makefile's final line (commit 2740ad2). The
+earlier plan/review conclusion that the comment was "non-contract, dropped" was
+wrong — this is a load-bearing discovery marker.
+
+**Environment notes (for reproducing):** the 25.12 ghcr SDK image is a snapshot
+container (setup.sh downloads the SDK; its gpg verification needs keys the image
+lacks) — prepared by extracting the 25.12.5 SDK tarball into the image and
+removing setup.sh (sdk-25.12-nosetup). The feed's `.git` must be owned by the
+container user or git refuses it (dubious ownership) — mounted a HOME with a
+safe.directory gitconfig. Docker Desktop/colima bind mounts are write-hostile:
+artifacts were extracted via `docker cp` after each build (the entrypoint's
+`mv bin/ /artifacts/` fails with EACCES on the mount).
