@@ -163,6 +163,9 @@ jobs:
             -DDEBUG_SUPPORT=OFF
           cmake --build /tmp/ucode/build -j"$(nproc)"
           /tmp/ucode/build/ucode -L "/tmp/ucode/build/*.so" -c packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
+          # The compiler writes its output to uc.out in the working
+          # directory; drop it so the checkout stays clean.
+          rm -f uc.out
           printf 'let x = ;\n' > /tmp/broken.uc
           if /tmp/ucode/build/ucode -L "/tmp/ucode/build/*.so" -c /tmp/broken.uc 2>/dev/null; then
             echo "::error::the ucode compiler accepted a deliberately broken file; the syntax check is not trustworthy"
