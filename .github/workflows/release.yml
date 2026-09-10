@@ -55,6 +55,15 @@ jobs:
         env:
           # The package is noarch, so one x86-64 SDK build serves every
           # device architecture.
+          #
+          # VERSION_PATH pins the SDK source to the release tarball
+          # instead of the ghcr snapshot container's default (snapshots):
+          # the snapshot SDK pins a moving packages-feed commit, and the
+          # curl package at some of those commits carries a Kconfig
+          # recursive dependency (PACKAGE_libcurl <-> LIBCURL_LDAP) that
+          # breaks the config generation as soon as the +curl dependency
+          # enables libcurl. The release pins are stable and validated.
+          VERSION_PATH: releases/25.12.5
           ARCH: x86-64-${{ matrix.version }}
           FEEDNAME: ttowrt
           # Absolute on purpose: docker reads a relative value as a volume
@@ -266,6 +275,8 @@ jobs:
       - name: Build trusttunnel-client with the SDK
         uses: openwrt/gh-action-sdk@v7
         env:
+          # Release SDK for the same determinism reason as the build job.
+          VERSION_PATH: ${{ matrix.version == '25.12.5' && 'releases/25.12.5' || 'releases/22.03.7' }}
           ARCH: ${{ matrix.arch }}-${{ matrix.version }}
           FEEDNAME: ttowrt
           FEED_DIR: ${{ github.workspace }}

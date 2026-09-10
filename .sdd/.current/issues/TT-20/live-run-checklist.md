@@ -14,10 +14,10 @@ worktree has none).
   + the Pages site). The rc tag exercises the full pipeline including the
   tag-gated paths (filename assertion, release upload) without touching a
   real version.
-- **Why `v1.0.16-rc` and not a lower number**: the nearest real tag is
+- **Why `v1.0.16_rc` and not a lower number**: the nearest real tag is
   `v1.0.15`. The version derives from `git describe --tags --abbrev=0`, and
   the ci.yml release-tag gate rejects a new tag older than the previous
-  one. `v1.0.16-rc` is the smallest correct choice.
+  one. `v1.0.16_rc` is the smallest correct choice.
 
 ## 0. Prerequisites (do not start until all hold)
 
@@ -72,11 +72,20 @@ curl -s https://i-zhirov.github.io/trusttunnel-openwrt/opkg/Packages | grep -E '
 # record the output as the "before" state
 ```
 
+### The tag name must produce a valid apk version
+
+Discovered during the first live dispatch: apk-tools 3.x REJECTS versions
+with a dash-prerelease suffix — `apk version -c 1.0.16-rc-r1` fails (and
+the apk packaging step of the build dies in ~0.5s with no output). The
+underscore form `1.0.16_rc-r1` is accepted (`apk version -c` exits 0),
+and the ipk side accepts any string. Hence the test tag is `v1.0.16_rc`,
+not `v1.0.16-rc`; the plan's `-rc` example is wrong for apk.
+
 ## 2. Create and push the test tag
 
 ```sh
-git tag v1.0.16-rc
-git push origin v1.0.16-rc
+git tag v1.0.16_rc
+git push origin v1.0.16_rc
 ```
 
 Pushing the tag triggers the workflow automatically (trigger `push: tags:
@@ -84,7 +93,7 @@ Pushing the tag triggers the workflow automatically (trigger `push: tags:
 
 ```sh
 gh run list --workflow=release.yml --limit 3
-# expect: a run on ref v1.0.16-rc, status in_progress
+# expect: a run on ref v1.0.16_rc, status in_progress
 ```
 
 Note: pushing the tag also triggers the **CI** workflow (its triggers
@@ -96,7 +105,7 @@ FROM THE TAG REF — a branch-ref dispatch would skip the tag assertion and
 the release upload:
 
 ```sh
-gh workflow run release.yml --ref v1.0.16-rc
+gh workflow run release.yml --ref v1.0.16_rc
 ```
 
 Watch it to completion:
@@ -109,7 +118,7 @@ gh run watch --exit-status
 
 Take the run URL from `gh run list` (or `gh run view`). Go through every
 job in `gh run view --web` and assert the items below. All names assume
-`v1.0.16-rc`; adjust if you picked another number.
+`v1.0.16_rc`; adjust if you picked another number.
 
 ### 3.1 `build` (2 matrix legs)
 
@@ -161,7 +170,7 @@ job in `gh run view --web` and assert the items below. All names assume
 
 ### 3.4 Release upload
 
-- A GitHub release exists for `v1.0.16-rc` with the four file groups:
+- A GitHub release exists for `v1.0.16_rc` with the four file groups:
   2 luci apks (1.0.16-rc), 20 client apks (`-<arch>` suffixes), 2 luci
   ipks, 19 client ipks.
 - Known inherited quirk, no action: the release UI may display `~` in the
@@ -175,7 +184,7 @@ job in `gh run view --web` and assert the items below. All names assume
     for all 20 archs;
   - `…/apk/key-build.pub`, `…/opkg/Packages.gz`, `…/opkg/Packages.sig`,
     `…/opkg/opkg-key.pub`, `…/favicon.ico`;
-  - the homepage with `__TAG__` substituted by `v1.0.16-rc`.
+  - the homepage with `__TAG__` substituted by `v1.0.16_rc`.
 - Index pages:
   - `…/apk/index.html` lists all 20 archs (the `__ARCH_LIST__`
     substitution);
@@ -248,13 +257,13 @@ This is acceptance criterion 2 of the issue, end to end.
      scope.
 2. **Release**: if the rc release should not remain:
    ```sh
-   gh release delete v1.0.16-rc --yes --cleanup-tag
+   gh release delete v1.0.16_rc --yes --cleanup-tag
    ```
    (this also deletes the tag on the remote; `--cleanup-tag` removes the
    tag with the release).
 3. **Local tag** (if the remote tag was deleted):
    ```sh
-   git tag -d v1.0.16-rc
+   git tag -d v1.0.16_rc
    ```
 4. **Scratch reference copy** (PRD convention): delete the preserved copy
    of the inherited `release.yml` from the OS temp dir if it still exists
@@ -280,14 +289,14 @@ This is acceptance criterion 2 of the issue, end to end.
      .sdd/.current/issues/TT-20/issue.md .sdd/.current/issues/TT-20/plan.md
    ```
 4. Commit the plan/validation/status changes with a message like
-   `docs: TT-20 live run verified (v1.0.16-rc dispatch)`.
+   `docs: TT-20 live run verified (v1.0.16_rc dispatch)`.
 5. Optionally run a final `prd-validate-issue TT-20` re-validation to
    confirm the report.
 
 ## What must NOT happen
 
 - Do not use a real version tag (`v1.0.16` etc.) — the pipeline mutates the
-  release and the site; the `-rc` suffix is the safety boundary.
+  release and the site; the `_rc` suffix is the safety boundary.
 - Do not dispatch from a branch ref for the closing run — the tag assertion
   and the release upload are `refs/tags/`-gated; a branch dispatch would
   silently skip them.
