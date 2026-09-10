@@ -587,7 +587,14 @@ jobs:
               [ -e "$p" ] || continue
               printf '%s\n' "- $(basename "$p")" >> "$files"
             done
-            sed -e "s/__ARCH__/$arch/g" -e "/__FILES__/{r $files; d}" repo-site/apk-arch-index.md > "$d/index.md"
+            # The r command consumes the rest of its line as the file
+            # name: a "; d" after it would be swallowed and the brace
+            # would never close. The file read and the delete must sit on
+            # separate lines inside the braces.
+            sed -e "s/__ARCH__/$arch/g" -e "/__FILES__/{
+              r $files
+              d
+            }" repo-site/apk-arch-index.md > "$d/index.md"
           done
           rm -f "$files"
 
