@@ -29,6 +29,12 @@ from a test tag plus the install.sh installs from the published Pages repo
 in this environment (no GitHub access; plan Task 9 note, 2026-09-09). Per
 instructions, issue/plan statuses were not touched.
 
+**Closing runbook**: `live-run-checklist.md` in the issue directory — the
+exact dispatch commands (test tag `v1.0.16-rc`, tag-ref dispatch), the
+job-by-job assertions, the live `install.sh` checks A1–A5 on the four
+rootfs images, the site-state decision, and the closing steps (plan
+checkboxes, this report's flip to Complete, statuses).
+
 ## Task Status
 
 - [x] **Task 1**: Baseline — validation state, contract checklist, reference copy - PASS
