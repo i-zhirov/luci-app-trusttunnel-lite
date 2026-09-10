@@ -35,6 +35,8 @@ ls -l key-build.pub opkg-key.pub
 #     TT_APK_SIGN_KEY  (the private half of key-build.pub)
 #     TT_OPKG_SIGN_KEY (the private half of opkg-key.pub)
 # Without them publish-repo fails at the apk/opkg signing steps.
+# Verified 2026-09-10: `gh secret list -R i-zhirov/trusttunnel-openwrt` shows
+# both (created 2026-09-04).
 
 # Pages is configured to deploy from GitHub Actions (not a branch).
 #   Settings → Pages → Source: "GitHub Actions"
@@ -57,6 +59,19 @@ git push -u origin consider-reimplementation
 harmless to the pipeline; the publish job only consumes `key-build.pub`,
 `opkg-key.pub`, `repo-site/`, `packages/`, and `install.sh`.)
 
+### Pre-run site snapshot (record before starting)
+
+The Pages site currently serves the LAST REAL RELEASE built from the
+PRE-REBASE tree: `opkg/Packages` shows `luci-app-trusttunnel_1.0.15_all.ipk`
+(git `26.251.39727-dc127ec` — the inherited code). The rc run therefore
+does NOT regress the site relative to today; it replaces stale inherited
+builds with the reimplemented code under `1.0.16-rc`.
+
+```sh
+curl -s https://i-zhirov.github.io/trusttunnel-openwrt/opkg/Packages | grep -E '^(Version|Filename):' | head -2
+# record the output as the "before" state
+```
+
 ## 2. Create and push the test tag
 
 ```sh
@@ -72,8 +87,13 @@ gh run list --workflow=release.yml --limit 3
 # expect: a run on ref v1.0.16-rc, status in_progress
 ```
 
-If no run appears (trigger missed), dispatch explicitly FROM THE TAG REF —
-a branch-ref dispatch would skip the tag assertion and the release upload:
+Note: pushing the tag also triggers the **CI** workflow (its triggers
+include tags `v*`). That run is expected and harmless — it executes the
+gates on the tag commit.
+
+If the Release run does not appear (trigger missed), dispatch explicitly
+FROM THE TAG REF — a branch-ref dispatch would skip the tag assertion and
+the release upload:
 
 ```sh
 gh workflow run release.yml --ref v1.0.16-rc
@@ -180,7 +200,7 @@ in a fresh container per image and assert the TT-18 contract:
 for img in x86-64-25.12.0 x86-64-22.03.7 x86-64-23.05.6 x86-64-24.10.8; do
   docker run --rm openwrt/rootfs:$img sh -c '
     apk update >/dev/null 2>&1 || opkg update >/dev/null 2>&1
-    sh -c "$(wget -O - https://raw.githubusercontent.com/<owner>/<repo>/consider-reimplementation/install.sh)"
+    sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/consider-reimplementation/install.sh)"
     echo "--- assertions ---"
     test -x /opt/trusttunnel_client/trusttunnel_client && echo "client binary: OK"
     /opt/trusttunnel_client/trusttunnel_client --version
@@ -188,7 +208,9 @@ for img in x86-64-25.12.0 x86-64-22.03.7 x86-64-23.05.6 x86-64-24.10.8; do
       echo "apk repo entry: OK"; ls /etc/apk/keys/trusttunnel.pub >/dev/null && echo "apk key: OK"
     fi
     if [ -f /etc/opkg/customfeeds.conf ] && grep -q "src/gz trusttunnel" /etc/opkg/customfeeds.conf; then
-      echo "opkg feed: OK"; ls /etc/opkg/keys/trusttunnel.pub >/dev/null && echo "opkg key: OK"
+      echo "opkg feed: OK"
+      ls /etc/opkg/keys/trusttunnel.pub >/dev/null && echo "opkg stable-name key: OK"
+      [ "$(ls /etc/opkg/keys | wc -l)" -ge 3 ] && echo "opkg keys (stock + both copies): OK"
     fi
     /etc/init.d/trusttunnel enabled && echo "service enabled" || echo "service NOT enabled (first install)"
     /etc/init.d/trusttunnel running && echo "service RUNNING (unexpected)" || echo "service NOT running (correct)"
@@ -211,15 +233,19 @@ This is acceptance criterion 2 of the issue, end to end.
 ## 5. Cleanup and site-state decision
 
 1. **Site state**: the Pages site now serves the `-rc` packages. Decide and
-   document in the issue:
-   - (a) accept until the next real release, or
-   - (b) restore by re-running the pipeline on the last real tag:
-     ```sh
-     gh workflow run release.yml --ref v1.0.15
-     gh run watch --exit-status
-     ```
-     (this rebuilds the CURRENT tree with version 1.0.15 and re-publishes
-     the site — the repositories again serve the real version).
+   document in the issue. **The only sane option is to accept until the
+   next real release**:
+   - The "restore by re-dispatch on the last real tag" idea from the plan
+     is WRONG in the reimplementation context: `v1.0.15` points at
+     `dc127ec`, the PRE-rebase commit — re-dispatching on it would rebuild
+     and republish the INHERITED (GPL-2.0-era) tree that this whole effort
+     replaced.
+   - The current site already serves pre-rebase v1.0.15 builds, so the rc
+     run strictly improves the site (reimplemented code) and nothing is
+     regressed.
+   - The proper restore is the next real release (a real `vX.Y.Z` tag on
+     the current tree) — that is a release decision, out of this runbook's
+     scope.
 2. **Release**: if the rc release should not remain:
    ```sh
    gh release delete v1.0.16-rc --yes --cleanup-tag
