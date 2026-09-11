@@ -10,9 +10,9 @@
 # package. At the end it checks that no table, rule or routes remain in
 # the kernel.
 #
-# The fork writes nothing into cron or the dnsmasq config, but the script
-# still cleans their traces: they remain from the original (upstream)
-# luci-app-trusttunnel if it was installed on the router before the fork.
+# The package writes nothing into cron or the dnsmasq config, but the
+# script still cleans their traces: they remain from earlier versions of
+# luci-app-trusttunnel that may have been installed on the router.
 #
 # The firewall zone and /etc/config/trusttunnel are removed only after
 # confirmation: the former because the package manager knows nothing about
@@ -31,10 +31,8 @@ set -e
 say()  { printf '%s\n' "$*"; }
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# Asks yes/no and returns 0 for "yes". Without a terminal (pipeline run,
-# cron) read yields an empty line, and under `set -e` the read's exit code
-# would abort the script — so on a read failure the default answer is
-# taken, as in install.sh.
+# Asks yes/no and returns 0 for "yes". An empty or invalid answer (and a
+# read failure without a terminal) falls back to the default.
 confirm() { # $1 — the question, $2 — the default answer (y or n)
 	_def=$2
 	printf '%s [%s] ' "$1" "$_def"
@@ -169,10 +167,9 @@ fi
 # --- Client binary and data ---------------------------------------------------
 # /opt/trusttunnel_client is normally removed with the trusttunnel-client
 # package above. The loop is kept as a safety net: it catches leftovers of
-# pre-package installs (the old install.sh fetched the binaries with the
-# vendor's own installer, outside any package), empty directories the
-# package manager leaves behind, and the directories the fork never creates
-# but the original package did.
+# pre-package installs (earlier install.sh versions fetched the binaries
+# outside any package), empty directories the package manager leaves
+# behind, and directories earlier package versions created.
 say "== Removing the client binaries and cached data"
 _removed=0
 for _d in /opt/trusttunnel_client /usr/share/trusttunnel /var/cache/trusttunnel /var/etc/trusttunnel; do
@@ -182,14 +179,13 @@ for _d in /opt/trusttunnel_client /usr/share/trusttunnel /var/cache/trusttunnel 
 		_removed=1
 	fi
 done
-# /usr/share/trusttunnel is not created by the fork: the directory remained
-# from the original package with the lists and the DoH-takeover state, and
-# it has to go too.
+# /usr/share/trusttunnel comes from earlier package versions (the lists
+# and the DoH-takeover state); it has to go too.
 [ "$_removed" = "1" ] || say "   nothing to remove"
 
 # --- Cron ---------------------------------------------------------------------
-# The fork does not create a cron job at all; the line may remain from the
-# original package. The pattern covers both the old (update_lists) and the
+# The package never creates a cron job; the line may remain from earlier
+# package versions. The pattern covers both the old (update_lists) and the
 # new (update_lists_cron) form.
 say "== Cleaning the cron job"
 if [ -f /etc/crontabs/root ] && grep -q 'trusttunnel update_lists' /etc/crontabs/root; then
@@ -201,11 +197,11 @@ else
 fi
 
 # --- dnsmasq leftovers --------------------------------------------------------
-# The fork does not publish a config into dnsmasq; the file may remain
-# from the original package. A regular stop removes the config copy from
-# dnsmasq's conf-dir and restarts it. This safety net is for the case when
-# the service was not stopped: the init script was already deleted by the
-# previous pass, while the config kept pointing at the vanished nftset.
+# The package does not publish a config into dnsmasq; the file may remain
+# from earlier package versions. A regular stop removes the config copy
+# from dnsmasq's conf-dir and restarts it. This safety net is for the case
+# when the service was not stopped: the init script was already deleted by
+# the previous pass, while the config kept pointing at the vanished nftset.
 _dnsmasq=$(ls /tmp/dnsmasq.*.d/trusttunnel.conf 2>/dev/null) || true
 if [ -n "$_dnsmasq" ]; then
 	say "== Removing the dnsmasq include left behind"

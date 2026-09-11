@@ -40,16 +40,10 @@ PRIVATE_V4='10.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/
 PRIVATE_V6='::1/128, fc00::/7, fe80::/10, ff00::/8'
 DEVICE_FILE="$OUT_DIR/device"
 
-# Records reads. The MTU is read and coerced for parity only — no command
-# below consumes it.
 TT_TABLE=$(tt_get network.table 880)
 TT_FWMARK=$(tt_get network.fwmark 0x9527)
 TT_ROUTER=$(tt_bool network.include_router_traffic 0)
 TT_BLACKHOLE=$(tt_bool network.blackhole_on_down 1)
-TT_MTU=$(tt_get network.mtu 1350)
-case $TT_MTU in
-    ''|*[!0-9]*) TT_MTU=1350 ;;
-esac
 
 # The LAN devices fall back to uci's lan device and then to br-lan. The
 # uci consultation is skipped for dump: an empty records value goes

@@ -3,10 +3,6 @@
 *.apk
 *.tar.gz
 
-# Local build in the SDK: artifacts and a helper script.
-# The reproducible build is described in .github/workflows/release.yml.
-.build-out/
-
 # Local tool settings and agent workspaces: machine-specific settings and
 # intermediate reports that have no place in history.
 .claude/
@@ -24,12 +20,3 @@
 *~
 .DS_Store
 Thumbs.db
-
-# Downloaded domain lists and local temporary files, in case someone
-# runs the generators right inside the repository tree.
-/lists/
-*.tsv.tmp
-*.log
-
-# graft's local graph cache — regenerable, not committed (run `graft build`).
-/graft/

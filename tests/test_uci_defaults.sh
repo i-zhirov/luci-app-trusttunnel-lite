@@ -21,11 +21,10 @@
 TT_UCD_SCRIPT=${TT_UCD_SCRIPT:-packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel}
 TT_UCD_FILTER=${TT_UCD_FILTER:-}
 
-# Local machines without docker keep the suite runnable: skip visibly and
-# exit green; the CI runners always have docker.
+# Local machines without docker keep the suite runnable: report a visible
+# skip; the CI runners always have docker.
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-    echo "SKIP: docker unavailable — scenario tests not run"
-    exit 0
+    tt_skip "docker unavailable — scenario tests not run"
 fi
 
 UCD_IMAGE=openwrt/rootfs:x86-64-25.12.0

@@ -11,19 +11,19 @@
 #                              healthy stubs (device present paths)
 #
 # Docker-gated like test_uci_defaults.sh: without docker the test reports
-# SKIP and exits 0, so the plain suite stays runnable on machines without
-# docker.
+# SKIP (exit 77, tt_skip), which the suite runner counts as skipped — the
+# plain suite stays runnable on machines without docker.
 . "$(dirname "$0")/../lib.sh"
 
-command -v docker >/dev/null 2>&1 || { echo "  SKIP: docker not available"; exit 0; }
-docker info >/dev/null 2>&1 || { echo "  SKIP: docker daemon not running"; exit 0; }
+command -v docker >/dev/null 2>&1 || tt_skip "docker not available"
+docker info >/dev/null 2>&1 || tt_skip "docker daemon not running"
 
 BASE="$(dirname "$0")"
 MOD="$BASE/mod/luci/trusttunnel.uc"
 BACKEND=packages/luci-app-trusttunnel/root/usr/share/rpcd/ucode/luci.trusttunnel
 
-docker image inspect tt-ucode-gate >/dev/null 2>&1 || { echo "  SKIP: tt-ucode-gate image missing (build tests/backend/Dockerfile first)"; exit 0; }
-docker build -q -t tt-backend-rootfs -f "$BASE/lab.Dockerfile" "$BASE" >/dev/null || { echo "  SKIP: lab image build failed"; exit 0; }
+docker image inspect tt-ucode-gate >/dev/null 2>&1 || tt_skip "tt-ucode-gate image missing (build tests/backend/Dockerfile first)"
+docker build -q -t tt-backend-rootfs -f "$BASE/lab.Dockerfile" "$BASE" >/dev/null || tt_skip "lab image build failed"
 
 cp "$BACKEND" "$MOD"
 
@@ -83,11 +83,11 @@ docker rm -f "$LAB_BAKED" "$LAB_HEALTHY" >/dev/null 2>&1
 trap 'docker rm -f "$LAB_BAKED" "$LAB_HEALTHY" >/dev/null 2>&1' EXIT
 
 # --- Phase A: the baked rootfs state (no tun device) ---------------------
-docker run --rm -d --name "$LAB_BAKED" -v "$(pwd)":/ws tt-backend-rootfs sleep 300 >/dev/null || { echo "  SKIP: cannot start the lab container"; exit 0; }
+docker run --rm -d --name "$LAB_BAKED" -v "$(pwd)":/ws tt-backend-rootfs sleep 300 >/dev/null || tt_skip "cannot start the lab container"
 check_goldens "$LAB_BAKED" "$BASE/goldens"
 
 # --- Phase B: a real tun device + healthy stubs --------------------------
-docker run --rm --privileged -d --name "$LAB_HEALTHY" -v "$(pwd)":/ws tt-backend-rootfs sleep 300 >/dev/null || exit 0
+docker run --rm --privileged -d --name "$LAB_HEALTHY" -v "$(pwd)":/ws tt-backend-rootfs sleep 300 >/dev/null || tt_skip "cannot start the healthy lab container"
 docker exec "$LAB_HEALTHY" sh -c 'apt-get install -y -qq python3 iproute2 >/dev/null 2>&1' >/dev/null 2>&1
 docker exec "$LAB_HEALTHY" sh -c 'cat > /tmp/mktun.py <<"PYEOF"
 import fcntl, struct, os, time
@@ -118,7 +118,6 @@ case "$1" in
 esac
 EOF
 chmod +x /usr/libexec/trusttunnel/routing
-echo ttlab0 > /var/etc/trusttunnel/device
 cat > /usr/bin/curl <<"EOF"
 #!/bin/sh
 case "$*" in
