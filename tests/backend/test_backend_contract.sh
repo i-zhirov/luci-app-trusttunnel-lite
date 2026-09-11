@@ -1,8 +1,7 @@
 #!/bin/sh
-# Contract test for the rpcd backend: loads the reimplemented
-# luci.trusttunnel the same way rpcd does (module value = the top-level
-# return) and byte-compares its responses against goldens captured from
-# the pre-reimplementation backend — the behavioral oracle.
+# Contract test for the rpcd backend: loads luci.trusttunnel the same way
+# rpcd does (module value = the top-level return) and byte-compares its
+# responses against the golden set — the behavioral contract.
 #
 # Two phases, two golden sets:
 #   goldens/*.json           — the baked stub rootfs state (no tun device:
