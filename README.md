@@ -21,8 +21,7 @@ The package is built around **named routing profiles**:
 
 **Everything on the router that this package touches:**
 
-- `luci-app-trusttunnel` plus the optional `luci-i18n-trusttunnel-ru` language
-  package;
+- `luci-app-trusttunnel`;
 - `trusttunnel-client` and its binaries under `/opt/trusttunnel_client`;
 - the `/etc/config/trusttunnel` configuration file;
 - a firewall zone named `trusttunnel` (bound to the `tun+` device wildcard)
@@ -77,8 +76,7 @@ The script then:
    the usign fingerprint).
 3. Installs the required packages `kmod-tun ip-full nftables curl
    ca-bundle`.
-4. Installs `luci-app-trusttunnel` and, on request,
-   `luci-i18n-trusttunnel-ru`; `trusttunnel-client` comes along as a
+4. Installs `luci-app-trusttunnel`; `trusttunnel-client` comes along as a
    dependency, with its binaries in `/opt/trusttunnel_client`.
 5. Restarts `rpcd` so the new backend code is loaded.
 6. Runs `/etc/uci-defaults/40-luci-trusttunnel` immediately: the script
@@ -424,9 +422,9 @@ sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwr
 The script then:
 
 1. Halts the service and disables its auto-start.
-2. Removes the packages in one call — `luci-i18n-trusttunnel-ru`,
-   `luci-app-trusttunnel`, `trusttunnel-client` (for opkg the dependents
-   must come first in the list).
+2. Removes the packages in one call — `luci-app-trusttunnel`,
+   `trusttunnel-client` (for opkg the dependents must come first in the
+   list).
 3. Tears down the repository configuration and the signing keys the
    installer put in place.
 4. Removes the client binaries and the caches (`/opt/trusttunnel_client`,
@@ -451,8 +449,8 @@ Removing by hand works as well:
 ```sh
 /etc/init.d/trusttunnel stop
 /etc/init.d/trusttunnel disable
-apk del luci-i18n-trusttunnel-ru luci-app-trusttunnel
-# on 22.03–24.10: opkg remove luci-i18n-trusttunnel-ru luci-app-trusttunnel
+apk del luci-app-trusttunnel
+# on 22.03–24.10: opkg remove luci-app-trusttunnel
 rm -rf /opt/trusttunnel_client
 # remove the feed entry and the installed keys (paths above)
 uci show firewall | grep trusttunnel
@@ -461,6 +459,14 @@ uci delete firewall.@forwarding[1]
 uci commit firewall
 /etc/init.d/firewall restart
 ```
+
+## Localisation
+
+The LuCI interface is English-only for now: no translation package is
+built or installed. The views keep LuCI's `_('...')` wrappers around every
+user-visible string, and the Russian translations are parked in the
+separate `trustunnel-openwrt-translations` repository for later
+reintroduction — see its README for the steps.
 
 ## Notes and caveats
 
@@ -471,13 +477,10 @@ uci commit firewall
   devices created by other software fall under it too.
 - **Repositories and signing.** Both repositories are served from the
   GitHub Pages site of this project
-  (`https://i-zhirov.github.io/trusttunnel-openwrt`), not from the GitHub
-  releases: the ru translation package carries `~` in its version (LuCI's
-  findrev scheme), a character GitHub replaces in release asset names,
-  while Pages serves file names byte-identically. The release workflow
-  publishes the site straight from CI; no branch ever holds the packages.
-  Signing: `adbsign` (EC key) for the apk index, `usign` for the opkg
-  feed.
+  (`https://i-zhirov.github.io/trusttunnel-openwrt`); the release
+  workflow publishes the site straight from CI, and no branch ever holds
+  the packages. Signing: `adbsign` (EC key) for the apk index, `usign`
+  for the opkg feed.
 - **Manual downloads.** A `.apk` or `.ipk` fetched from the release assets
   must be checked against the SHA-256 sums in the release notes.
 - **Key rotation.** The signing keys rotate; run the installer once more to
