@@ -95,13 +95,21 @@ _tt_fail() {
 
 # tt_test_summary — prints the tally and exits 0 only when nothing failed.
 tt_test_summary() {
-    tt_sum_total=$(cat "$TT_TEST_TMP/total")
-    tt_sum_failed=$(cat "$TT_TEST_TMP/failed")
-    printf '  %s assertions, %s failed\n' "$tt_sum_total" "$tt_sum_failed"
-    if [ "$tt_sum_failed" -eq 0 ]; then
-        exit 0
-    fi
-    exit 1
+	tt_sum_total=$(cat "$TT_TEST_TMP/total")
+	tt_sum_failed=$(cat "$TT_TEST_TMP/failed")
+	printf '  %s assertions, %s failed\n' "$tt_sum_total" "$tt_sum_failed"
+	if [ "$tt_sum_failed" -eq 0 ]; then
+		exit 0
+	fi
+	exit 1
+}
+
+# tt_skip <reason> — report an explicitly skipped test and exit with the
+# runner's skip status (77): tests/run.sh counts it as skipped and does
+# not fail the run.
+tt_skip() {
+	printf '  SKIP: %s\n' "$1"
+	exit 77
 }
 
 tt_init_counters

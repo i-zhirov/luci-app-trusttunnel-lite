@@ -28,9 +28,6 @@ msgstr "Да"
 msgid "no"
 msgstr "Нет"
 
-msgid "installed"
-msgstr "установлено"
-
 msgid "missing"
 msgstr "не найдено"
 
@@ -313,9 +310,6 @@ msgstr "Требуются и имя пользователя, и пароль."
 msgid "Without it the TLS session uses the bare address, which many servers reject."
 msgstr "Без него TLS-сеанс использует адрес как есть, а многие серверы отклоняют такие соединения."
 
-msgid "Run install.sh — the package does not ship the client binary."
-msgstr "Запустите install.sh — пакет не содержит бинарный файл клиента."
-
 msgid "Install kmod-tun."
 msgstr "Установите пакет kmod-tun."
 
@@ -531,9 +525,6 @@ msgstr "нет в активном наборе правил"
 
 msgid "the client has not created one"
 msgstr "клиент его ещё не создавал"
-
-msgid "the router itself has no internet access"
-msgstr "у самого маршрутизатора нет доступа в интернет"
 
 msgid "Custom SNI"
 msgstr "Пользовательский SNI"

@@ -671,8 +671,8 @@ return {
 					} else if (cache != null && type(cache.tag) == 'string') {
 						// Network failure: fall back to the cached answer
 						// with its original timestamp, marked stale. The
-						// cache file is left untouched — the oracle does
-						// not refresh it on failure.
+						// cache file is left untouched — a failed check
+						// does not refresh it.
 						res.latest = cache.tag;
 						res.checked_at = cache.checked_at;
 						res.stale = true;

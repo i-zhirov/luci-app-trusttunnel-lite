@@ -2,10 +2,10 @@
 # Guards the EXPLICIT dependency declarations: every system package the
 # installed files invoke (nft, ip, curl, the tun kernel module, ...) must be
 # named in the Makefile's DEPENDS — not just mentioned in a README or an
-# installer. The original package left nftables implicit (fw4 pulls it on
-# stock images) until a device without it showed up; a regression in the
-# other direction (a dependency dropped while the scripts still call the
-# binary) is just as silent.
+# installer. A dependency left implicit (nftables stays unlisted because
+# fw4 pulls it on stock images) breaks silently on a device without it; a
+# regression in the other direction (a dependency dropped while the scripts
+# still call the binary) is just as silent.
 . "$(dirname "$0")/lib.sh"
 
 APP=packages/luci-app-trusttunnel/Makefile

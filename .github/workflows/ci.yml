@@ -1,8 +1,7 @@
 # Continuous integration gate for the trusttunnel-openwrt package.
 #
 # Every step below is a contract gate: the tree must pass each one before
-# it is shippable. The checks and the pinned tool versions are the
-# specification; the expression is this project's own.
+# it is shippable.
 #
 # Checkout always fetches the full history (fetch-depth: 0) because the
 # release-tag check compares commit dates across tags, and the shellcheck
@@ -77,24 +76,33 @@ jobs:
       - name: Run the unit test suite
         run: sh tests/run.sh
 
+      # The contract test's lab image: the pinned ucode compiler with the
+      # fs/math modules, baked into an image so the test's docker lab can
+      # load the backend module. Without it the test would SKIP.
+      - name: Build the contract test lab image
+        run: docker build -q -t tt-ucode-gate -f tests/backend/Dockerfile tests/backend
+
       # The rpcd backend's behavioral contract test (response goldens
       # byte-compared against the live backend, docker-gated; SKIPs
       # without docker, so the plain suite stays runnable anywhere).
+      # A skip (exit 77) passes the step.
       - name: Run the backend contract test
-        run: sh tests/backend/test_backend_contract.sh
+        run: |
+          sh tests/backend/test_backend_contract.sh || { rc=$?; [ "$rc" -eq 77 ] && exit 0; exit "$rc"; }
+
+      # The install harness exercises install.sh scenario by scenario
+      # inside fresh openwrt/rootfs containers with stubbed package
+      # managers; docker-gated like the contract test, so it SKIPs
+      # without docker. A skip (exit 77) passes the step.
+      - name: Run the install harness
+        run: |
+          sh tests/install-harness.sh || { rc=$?; [ "$rc" -eq 77 ] && exit 0; exit "$rc"; }
 
       # Shellcheck is pinned to v0.11.0 so the gate is stable across
       # runner image updates; the docker invocation keeps the check
-      # reproducible on any machine. The list covers the contract files
-      # (strict: a missing file fails the step), the hotplug script and
-      # tests/test_deps.sh (both exist today and were linted nowhere
-      # else), plus the three test files sibling issues deliver
-      # (tests/test_hotplug.sh, tests/test_uci_defaults.sh,
-      # tests/install-harness.sh) — the latter are included only when
-      # present, so the gate is green today and covers each file
-      # automatically once its issue lands. Error severity keeps the
-      # gate on real breakage; the tree currently carries only
-      # info/warning findings in files owned by other issues.
+      # reproducible on any machine. Every shipped script and test
+      # harness file is listed explicitly, so a missing file fails the
+      # step. Error severity keeps the gate on real breakage.
       - name: Lint the project shell scripts with shellcheck
         run: |
           set -- \
@@ -107,10 +115,11 @@ jobs:
             packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/uci-export \
             packages/luci-app-trusttunnel/root/etc/uci-defaults/40-luci-trusttunnel \
             packages/luci-app-trusttunnel/root/etc/hotplug.d/net/40-trusttunnel \
-            tests/test_deps.sh
-          for extra in tests/test_hotplug.sh tests/test_uci_defaults.sh tests/install-harness.sh tests/backend/test_backend_contract.sh; do
-            [ -f "$extra" ] && set -- "$@" "$extra"
-          done
+            tests/test_deps.sh \
+            tests/test_hotplug.sh \
+            tests/test_uci_defaults.sh \
+            tests/install-harness.sh \
+            tests/backend/test_backend_contract.sh
           docker run --rm -v "$PWD:/src" -w /src koalaman/shellcheck:v0.11.0 -s sh --severity=error "$@"
 
       # A syntax error in the init script would take the service down at

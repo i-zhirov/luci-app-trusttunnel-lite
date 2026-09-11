@@ -1,19 +1,16 @@
 #!/bin/sh
 # Routing script contract test.
 #
-# The script under test is selected through $TT_ROUTING (default: the tree's
-# routing script), so the same assertions run against the oracle copy of the
-# old implementation and against the rewrite. Real ip/nft calls are replaced
-# by the stub scripts below: every invocation appends its argv to the log
-# file $TT_CMD_LOG, the nft stub captures stdin only for the "-f -"
-# transaction (the suite runner closes stdin, so an unconditional read would
-# hang), and ip always reports success so the live device checks in attach
-# pass. The fixture endpoints are literal addresses, which keeps real
-# nslookup out of the test.
+# Real ip/nft calls are replaced by the stub scripts below: every invocation
+# appends its argv to the log file $TT_CMD_LOG, the nft stub captures stdin
+# only for the "-f -" transaction (the suite runner closes stdin, so an
+# unconditional read would hang), and ip always reports success so the live
+# device checks in attach pass. The fixture endpoints are literal addresses,
+# which keeps real nslookup out of the test.
 # shellcheck source=/dev/null
 . "$(dirname "$0")/lib.sh"
 
-R=${TT_ROUTING:-packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing}
+R=packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel/routing
 export TT_LIBDIR="${TT_LIBDIR:-packages/luci-app-trusttunnel/root/usr/libexec/trusttunnel}"
 
 stub_dir=$TT_TEST_TMP/bin

@@ -35,9 +35,8 @@ _dedup_forwarding() {
 }
 
 # Re-bind every zone after the first one to the tun+ wildcard. Runs only
-# after a dedup removed duplicate zones, mirroring the first-boot behavior
-# observed on the inherited script (a dedup is followed by a repair pass
-# over the remaining zones).
+# after a dedup removed duplicate zones: the dedup pass is followed by a
+# repair pass over the remaining zones.
 # shellcheck disable=SC2329,SC2154
 _rebind_zone() {
 	_rz_sec=$1

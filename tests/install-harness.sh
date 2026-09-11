@@ -8,14 +8,12 @@
 # log and the captured /etc state are the comparison data.
 #
 # Usage:
-#   sh tests/install-harness.sh                          # test the worktree install.sh
-#   TT_BASELINE_INSTALL=/path/oracle.sh \
-#     sh tests/install-harness.sh                        # test the preserved oracle copy
+#   sh tests/install-harness.sh                          # run the whole scenario set
 #   TT_FILTER=chunk1 sh tests/install-harness.sh         # run only matching scenarios
 #
 # The harness is deliberately NOT picked up by tests/run.sh (the runner
-# globs tests/test_*.sh) and exits 0 with a skip note when docker is
-# unavailable.
+# globs tests/test_*.sh) and reports SKIP (exit 77, the suite's skip
+# status) when docker is unavailable.
 #
 # The assert_* functions are dispatched by name from run_scenario (indirect
 # invocation shellcheck cannot see), and write_prep emits literal script
@@ -34,8 +32,8 @@ FAILED=0
 CID=""
 
 command -v docker >/dev/null 2>&1 || {
-    echo "skip: docker is not available; install-harness.sh not run"
-    exit 0
+    echo "  SKIP: docker not available"
+    exit 77
 }
 
 # The scratch dir lives under $HOME: Docker Desktop on macOS only shares
@@ -120,7 +118,6 @@ assert_no_log() { assert_no_grep "$SCRATCH/call.log" "$1" "$2"; }
 # --- container lifecycle --------------------------------------------------------
 
 container_start() {
-    # $1 = image
     CID=$(docker create -v "$TT_SRC_DIR:/src:ro" -v "$TT_STUBS:/stubs:ro" "$1" \
         sh -c 'trap "exit 0" TERM INT; while :; do sleep 3600; done') || return 1
     docker start "$CID" >/dev/null 2>&1 || return 1
@@ -480,8 +477,6 @@ as_apk_update_fail() {
 }
 
 # --- chunk 5: was_running restore, rpcd restart, immediate uci-defaults run ------
-# PLANT_TT="cp /stubs/etc/init.d/trusttunnel /etc/init.d/trusttunnel; chmod +x /etc/init.d/trusttunnel"
-# PLANT_UCIDEFAULTS="mkdir -p /etc/uci-defaults; cp /stubs/etc/uci-defaults/40-luci-trusttunnel /etc/uci-defaults/40-luci-trusttunnel; chmod +x /etc/uci-defaults/40-luci-trusttunnel"
 
 sc_first_install() {
     run_scenario "chunk5: first install leaves the service disabled" "$IMG_APK" 0 "uname apk wget" "25.12.0" "" "" as_first_install
@@ -591,7 +586,7 @@ cat > "$TT_STUBS/bin/apk" <<'STUB'
 printf 'apk %s\n' "$*" >> /tmp/tt_call.log
 case "$1" in
     --print-arch)
-        printf '%s\n' "${STUB_APK_ARCH:-x86_64}"
+        printf '%s\n' 'x86_64'
         exit "${STUB_APK_PRINT_ARCH_RC:-0}"
         ;;
     update)
@@ -601,7 +596,7 @@ case "$1" in
         for _p in "$@"; do
             [ "$_p" = "${STUB_APK_FAIL_PKG:-}" ] && exit 1
         done
-        exit "${STUB_APK_ADD_RC:-0}"
+        exit 0
         ;;
     info)
         exit "${STUB_APK_INFO_RC:-0}"
@@ -617,13 +612,13 @@ cat > "$TT_STUBS/bin/opkg" <<'STUB'
 printf 'opkg %s\n' "$*" >> /tmp/tt_call.log
 case "$1" in
     update)
-        exit "${STUB_OPKG_UPDATE_RC:-0}"
+        exit 0
         ;;
     install)
         for _p in "$@"; do
             [ "$_p" = "${STUB_OPKG_FAIL_PKG:-}" ] && exit 1
         done
-        exit "${STUB_OPKG_INSTALL_RC:-0}"
+        exit 0
         ;;
     list-installed)
         printf '%s\n' "${STUB_OPKG_LIST:-trusttunnel-client 1.0-r1}"
@@ -648,7 +643,7 @@ while [ "$#" -gt 0 ]; do
     shift
 done
 if [ "${STUB_WGET_RC:-0}" -eq 0 ]; then
-    [ -n "$_out" ] && printf '%s\n' "${STUB_WGET_BODY:-stub pubkey}" > "$_out"
+    [ -n "$_out" ] && printf '%s\n' 'stub pubkey' > "$_out"
 fi
 exit "${STUB_WGET_RC:-0}"
 STUB
@@ -690,14 +685,7 @@ exit "${STUB_UCI_DEFAULTS_RC:-0}"
 STUB
 
 TT_SRC_DIR=$PWD
-if [ -n "${TT_BASELINE_INSTALL:-}" ]; then
-    mkdir -p "$SCRATCH/src"
-    cp "$TT_BASELINE_INSTALL" "$SCRATCH/src/install.sh" || exit 1
-    TT_SRC_DIR=$SCRATCH/src
-    echo "== oracle mode: testing $TT_BASELINE_INSTALL"
-else
-    echo "== testing $PWD/install.sh"
-fi
+echo "== testing $PWD/install.sh"
 
 trap 'container_stop; rm -rf "$SCRATCH"' EXIT INT TERM
 

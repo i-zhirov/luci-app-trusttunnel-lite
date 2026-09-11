@@ -85,7 +85,6 @@ var DIAG_TEXT = {
 	'Fill in the address on the Settings page, or import the server config.': _('Fill in the address on the Settings page, or import the server config.'),
 	'Both the user name and the password are required.': _('Both the user name and the password are required.'),
 	'Without it the TLS session uses the bare address, which many servers reject.': _('Without it the TLS session uses the bare address, which many servers reject.'),
-	'Run install.sh — the package does not ship the client binary.': _('Run install.sh — the package does not ship the client binary.'),
 	'Install kmod-tun.': _('Install kmod-tun.'),
 	'Turn on Enable on the Settings page, then press Start.': _('Turn on Enable on the Settings page, then press Start.'),
 	'Press Start and read the client log below.': _('Press Start and read the client log below.'),
@@ -99,7 +98,6 @@ var DIAG_TEXT = {
 	'A request bound to the device can fail even on a healthy tunnel, because the default route lives in the marked table. Judge by a LAN client instead.': _('A request bound to the device can fail even on a healthy tunnel, because the default route lives in the marked table. Judge by a LAN client instead.'),
 	'not set': _('not set'),
 	'not installed': _('not installed'),
-	'installed': _('installed'),
 	'missing': _('missing'),
 	'yes': _('yes'),
 	'no': _('no'),
@@ -111,7 +109,6 @@ var DIAG_TEXT = {
 	'not attached': _('not attached'),
 	'loaded in fw4': _('loaded in fw4'),
 	'not in the live ruleset': _('not in the live ruleset'),
-	'the router itself has no internet access': _('the router itself has no internet access'),
 	'/dev/net/tun present': _('present')
 };
 
