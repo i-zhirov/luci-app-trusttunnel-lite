@@ -417,7 +417,7 @@ as_opkg_repo_usign_fail() {
     assert_crun 'ls /etc/opkg/keys' "trusttunnel.pub" "no fingerprint-named key copy exists"
 }
 
-# --- chunk 4: update/install sequence (deps, app, optional i18n, tripwire) ------
+# --- chunk 4: update/install sequence (deps, app, tripwire) ---------------------
 
 sc_apk_install_happy() {
     run_scenario "chunk4: apk install happy path" "$IMG_APK" 0 "uname apk wget" "25.12.0" "" "" as_apk_install_happy
@@ -425,8 +425,7 @@ sc_apk_install_happy() {
 as_apk_install_happy() {
     assert_log_order "apk update" "apk add kmod-tun ip-full nftables curl ca-bundle" "update precedes the dependency install"
     assert_log_order "apk add kmod-tun ip-full nftables curl ca-bundle" "apk add luci-app-trusttunnel" "dependencies precede the main package"
-    assert_log_order "apk add luci-app-trusttunnel" "apk add luci-i18n-trusttunnel-ru" "the main package precedes the translation"
-    assert_log_order "apk add luci-i18n-trusttunnel-ru" "apk info -e trusttunnel-client" "the tripwire runs after the installs"
+    assert_log_order "apk add luci-app-trusttunnel" "apk info -e trusttunnel-client" "the tripwire runs after the installs"
 }
 
 sc_opkg_install_happy() {
@@ -435,24 +434,7 @@ sc_opkg_install_happy() {
 as_opkg_install_happy() {
     assert_log_order "opkg update" "opkg install kmod-tun ip-full nftables curl ca-bundle" "update precedes the dependency install"
     assert_log_order "opkg install kmod-tun ip-full nftables curl ca-bundle" "opkg install luci-app-trusttunnel" "dependencies precede the main package"
-    assert_log_order "opkg install luci-app-trusttunnel" "opkg install luci-i18n-trusttunnel-ru" "the main package precedes the translation"
-    assert_log_order "opkg install luci-i18n-trusttunnel-ru" "opkg list-installed" "the tripwire runs after the installs"
-}
-
-sc_apk_i18n_fail() {
-    run_scenario "chunk4: apk i18n failure is not fatal" "$IMG_APK" 0 "uname apk wget" "25.12.0" "STUB_APK_FAIL_PKG=luci-i18n-trusttunnel-ru" "" as_apk_i18n_fail
-}
-as_apk_i18n_fail() {
-    assert_grep "$SCRATCH/run.out" "warning" "a warning is printed"
-    assert_log "apk add luci-app-trusttunnel" "the main package was installed"
-}
-
-sc_opkg_i18n_fail() {
-    run_scenario "chunk4: opkg i18n failure is not fatal" "$IMG_OPKG" 0 "uname opkg wget usign" "22.03.7" "STUB_OPKG_FAIL_PKG=luci-i18n-trusttunnel-ru" "" as_opkg_i18n_fail
-}
-as_opkg_i18n_fail() {
-    assert_grep "$SCRATCH/run.out" "warning" "a warning is printed"
-    assert_log "opkg install luci-app-trusttunnel" "the main package was installed"
+    assert_log_order "opkg install luci-app-trusttunnel" "opkg list-installed" "the tripwire runs after the installs"
 }
 
 sc_apk_tripwire_fail() {
@@ -593,9 +575,6 @@ case "$1" in
         exit "${STUB_APK_UPDATE_RC:-0}"
         ;;
     add)
-        for _p in "$@"; do
-            [ "$_p" = "${STUB_APK_FAIL_PKG:-}" ] && exit 1
-        done
         exit 0
         ;;
     info)
@@ -615,9 +594,6 @@ case "$1" in
         exit 0
         ;;
     install)
-        for _p in "$@"; do
-            [ "$_p" = "${STUB_OPKG_FAIL_PKG:-}" ] && exit 1
-        done
         exit 0
         ;;
     list-installed)
@@ -710,8 +686,6 @@ run_all() {
     sc_opkg_repo_usign_fail
     sc_apk_install_happy
     sc_opkg_install_happy
-    sc_apk_i18n_fail
-    sc_opkg_i18n_fail
     sc_apk_tripwire_fail
     sc_opkg_tripwire_fail
     sc_apk_update_fail

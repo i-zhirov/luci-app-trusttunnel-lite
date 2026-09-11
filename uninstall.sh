@@ -3,12 +3,11 @@
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/uninstall.sh)"
 #
 # Stops the service, removes it from auto-start, deletes the packages in
-# one package-manager call (apk on 25.12+, opkg on 22.03-24.10; the
-# language package depends on the main one, the main one on the client —
-# hence the order), the client data and the caches, restarts rpcd and
-# clears the LuCI caches so the menu and the pages forget the removed
-# package. At the end it checks that no table, rule or routes remain in
-# the kernel.
+# one package-manager call (apk on 25.12+, opkg on 22.03-24.10; the main
+# package depends on the client — hence the order), the client data and
+# the caches, restarts rpcd and clears the LuCI caches so the menu and the
+# pages forget the removed package. At the end it checks that no table,
+# rule or routes remain in the kernel.
 #
 # The package writes nothing into cron or the dnsmasq config, but the
 # script still cleans their traces: they remain from earlier versions of
@@ -88,29 +87,25 @@ if [ "$PM" = "apk" ]; then
 	# `apk info -e` — "is the package installed" — works the same in
 	# apk-tools v2 and v3.
 	apk info -e luci-app-trusttunnel >/dev/null 2>&1 && _pkgs="$_pkgs luci-app-trusttunnel"
-	apk info -e luci-i18n-trusttunnel-ru >/dev/null 2>&1 && _pkgs="$_pkgs luci-i18n-trusttunnel-ru"
 	apk info -e trusttunnel-client >/dev/null 2>&1 && _pkgs="$_pkgs trusttunnel-client"
 else
 	# opkg processes the remove arguments IN ORDER and refuses to remove a
 	# package that still has installed dependents ("is depended upon by").
-	# The language package depends on the main one and the main one depends
-	# on the client, so the order is: i18n, app, client — each is gone
-	# before the one depending on it is removed. All in one call, as in the
-	# apk branch.
+	# The main package depends on the client, so the order is: app, client
+	# — each is gone before the one depending on it is removed. All in one
+	# call, as in the apk branch.
 	#
 	# `opkg list-installed` prints "name - version - description", so the
 	# pattern is a line start with the name and a space, not an exact match
 	# of the whole line.
-	opkg list-installed 2>/dev/null | grep -q '^luci-i18n-trusttunnel-ru ' && _pkgs="luci-i18n-trusttunnel-ru"
-	opkg list-installed 2>/dev/null | grep -q '^luci-app-trusttunnel ' && _pkgs="$_pkgs luci-app-trusttunnel"
+	opkg list-installed 2>/dev/null | grep -q '^luci-app-trusttunnel ' && _pkgs="luci-app-trusttunnel"
 	opkg list-installed 2>/dev/null | grep -q '^trusttunnel-client ' && _pkgs="$_pkgs trusttunnel-client"
 fi
 if [ -n "$_pkgs" ]; then
-	# All packages in one call: the language package depends on the main
-	# one, and removing the main one alone would silently delete nothing —
-	# apk answers "not removed due to", opkg "is depended upon by". For
-	# opkg the order in the list matters: the dependents must come first
-	# (see above).
+	# All packages in one call: the main package depends on the client,
+	# and removing the client alone would fail — apk answers "not removed
+	# due to", opkg "is depended upon by". For opkg the order in the list
+	# matters: the dependents must come first (see above).
 	# shellcheck disable=SC2086
 	if [ "$PM" = "apk" ]; then
 		apk del $_pkgs
