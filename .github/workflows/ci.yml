@@ -77,9 +77,9 @@ jobs:
       - name: Run the unit test suite
         run: sh tests/run.sh
 
-      # The rpcd backend's behavioral contract test (goldens captured from
-      # the pre-reimplementation backend, docker-gated; SKIPs without
-      # docker, so the plain suite stays runnable anywhere).
+      # The rpcd backend's behavioral contract test (response goldens
+      # byte-compared against the live backend, docker-gated; SKIPs
+      # without docker, so the plain suite stays runnable anywhere).
       - name: Run the backend contract test
         run: sh tests/backend/test_backend_contract.sh
 

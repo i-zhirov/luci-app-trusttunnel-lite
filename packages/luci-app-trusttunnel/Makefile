@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # luci-app-trusttunnel: LuCI support for the TrustTunnel full-tunnel client.
-# Independent reimplementation (Apache-2.0); the upstream package was only
-# the starting point of the design, see the Acknowledgements in README.md.
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-trusttunnel
