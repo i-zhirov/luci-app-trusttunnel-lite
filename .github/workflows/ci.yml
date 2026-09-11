@@ -52,7 +52,7 @@ jobs:
 
       # On a tag push the new tag must point to a commit newer than the
       # previous tag's commit: tagging an old commit would silently roll
-      # the release (and with it the translated strings) back.
+      # the release back.
       - name: Check that the new tag is not older than the previous tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |

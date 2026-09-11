@@ -80,13 +80,8 @@ jobs:
         run: |
           mkdir -p dist
           find out/bin/ -name "luci-app-trusttunnel*.${{ matrix.ext }}" -exec cp {} dist/ \;
-          find out/bin/ -name "luci-i18n-trusttunnel-*.${{ matrix.ext }}" -exec cp {} dist/ \;
           if [ -z "$(find dist -name "luci-app-trusttunnel*.${{ matrix.ext }}" -print -quit)" ]; then
             echo "::error::no luci-app-trusttunnel package was built"
-            exit 1
-          fi
-          if [ -z "$(find dist -name "luci-i18n-trusttunnel-*.${{ matrix.ext }}" -print -quit)" ]; then
-            echo "::error::no luci-i18n-trusttunnel package was built"
             exit 1
           fi
 
@@ -326,9 +321,7 @@ jobs:
           if-no-files-found: ignore
 
   # Assembly, signing and publishing. The repositories are served from
-  # GitHub Pages instead of being carried as release assets: the i18n
-  # package version contains a tilde (~) that release-asset naming
-  # mangles, and Pages serves the files byte-identically, which the
+  # GitHub Pages, which serves the files byte-identically, as the
   # package managers rely on.
   publish-repo:
     name: Assemble and publish the repositories
