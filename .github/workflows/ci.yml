@@ -76,6 +76,12 @@ jobs:
       - name: Run the unit test suite
         run: sh tests/run.sh
 
+      # The contract test's lab image: the pinned ucode compiler with the
+      # fs/math modules, baked into an image so the test's docker lab can
+      # load the backend module. Without it the test would SKIP.
+      - name: Build the contract test lab image
+        run: docker build -q -t tt-ucode-gate -f tests/backend/Dockerfile tests/backend
+
       # The rpcd backend's behavioral contract test (response goldens
       # byte-compared against the live backend, docker-gated; SKIPs
       # without docker, so the plain suite stays runnable anywhere).
