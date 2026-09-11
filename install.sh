@@ -3,9 +3,9 @@
 #   sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/install.sh)"
 #
 # Configures the trusttunnel package repository (apk on 25.12+, opkg on
-# 22.03-24.10), installs the LuCI application with its dependencies and the
-# optional Russian translation, then refreshes rpcd and seeds the default
-# routing profile. A running service is stopped for the install and started
+# 22.03-24.10), installs the LuCI application with its dependencies, then
+# refreshes rpcd and seeds the default routing profile. A running service is
+# stopped for the install and started
 # back afterwards; a fresh or stopped service stays disabled until the user
 # enables it. The repository entry is left configured on purpose so future
 # updates arrive with the regular package-manager upgrade.
@@ -116,11 +116,9 @@ fi
 say "== Installing the package"
 if [ "$PM" = "apk" ]; then
 	apk add luci-app-trusttunnel
-	apk add luci-i18n-trusttunnel-ru || say "warning: the Russian translation package (luci-i18n-trusttunnel-ru) is not available; the interface will be in English"
 	apk info -e trusttunnel-client >/dev/null 2>&1 || die "trusttunnel-client is not installed; the installation failed"
 else
 	opkg install luci-app-trusttunnel
-	opkg install luci-i18n-trusttunnel-ru || say "warning: the Russian translation package (luci-i18n-trusttunnel-ru) is not available; the interface will be in English"
 	opkg list-installed 2>/dev/null | grep -q '^trusttunnel-client ' || die "trusttunnel-client is not installed; the installation failed"
 fi
 
