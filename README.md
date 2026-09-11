@@ -1,296 +1,305 @@
 # trusttunnel-openwrt
 
-A lightweight fork of
-[the original luci-app-trusttunnel](https://github.com/NooBiToo/TrustTunnelOpenWrt)
-(GPL-2.0) for OpenWrt 25.12+ (apk).
+TrustTunnel client daemon for OpenWrt routers. The package is an
+independent implementation (Apache-2.0) of the same idea as
+[`luci-app-trusttunnel`](https://github.com/NooBiToo/TrustTunnelOpenWrt),
+whose GPL-2.0 code was fully reimplemented in this repository (see the
+Acknowledgements for the history); it targets OpenWrt **22.03 and newer**,
+runs the tunnel, exposes a LuCI control page and delivers the tunnel to
+the LAN.
 
-**No community domain lists, routing profiles instead.** The original package
-routes *selected* domains into the tunnel using dnsmasq `nftset=` sets and
-community lists from itdoginfo/allow-domains. This fork removes the entire
-list machinery — no lists, no list downloads, no cron, no dnsmasq-full
-requirement, no list-DNS options — and keeps the rest: the TrustTunnel client
-as a procd service, the firewall-level killswitch (blackhole route), and the
-LuCI interface (Status / Settings / Diagnostics).
+The original project's community-maintained domain lists are gone. Instead,
+the package is built around **named routing profiles**:
 
-Instead of the lists, routing follows the official GUI client's model:
-**named routing profiles** (VPN / Bypass modes) with two rule lists each
-(domains, `*.domain`, IP, IP:port, CIDR), one profile assigned to the
-server. The client applies the mode and the rules itself, after the kernel
-has already marked the traffic — no dnsmasq involvement at all. Without an
-assigned profile the legacy behavior applies: everything through the tunnel
-with the flat "do not bypass" list as exclusions.
+- Each profile carries a **mode** and two rule lists.
+- **VPN mode** sends everything through the tunnel except the entries in the
+  bypass list; **Bypass mode** sends only the entries in the VPN list through
+  the tunnel.
+- Rule entries accept a plain domain, a `*.domain` wildcard, an IP address,
+  an `IP:port` pair, or a CIDR range.
+- One profile is assigned to the server via `endpoint.routing_profile`, and
+  the client itself enforces the mode and the rule lists once the traffic has
+  been marked into the tunnel.
+- With no profile assigned (or a name that no longer matches any profile),
+  the previous behavior takes over: everything goes into the tunnel, and the
+  flat `domains.direct` list is applied as the exclusions.
 
-Everything on the router that the fork touches:
+Nothing downloads lists, no cron job is installed, `dnsmasq-full` is not
+required, and no list-DNS options exist.
 
-- `luci-app-trusttunnel` (+ `luci-i18n-trusttunnel-ru` translation)
-- `trusttunnel-client` — the official TrustTunnel client binaries, installed
-  as a dependency of the LuCI package into `/opt/trusttunnel_client`
-- `/etc/config/trusttunnel` — your settings (survives package updates)
-- a `trusttunnel` firewall zone (`tun+`) with a `lan → trusttunnel` forwarding
-  rule, created on install
-- routing: fwmark rule → table 880 → client's tun device, with a blackhole
-  killswitch
+**Everything on the router that this package touches:**
 
-What the fork does **not** touch: dnsmasq, its config, its cache, the
-`https-dns-proxy` package, cron, or any other service.
+- `luci-app-trusttunnel` plus the optional `luci-i18n-trusttunnel-ru` language
+  package;
+- `trusttunnel-client` and its binaries under `/opt/trusttunnel_client`;
+- the `/etc/config/trusttunnel` configuration file;
+- a firewall zone named `trusttunnel` (bound to the `tun+` device wildcard)
+  together with the forwarding rule `lan → trusttunnel`;
+- the routing chain fwmark → table `880` → the client's tun device, backed by
+  a blackhole killswitch.
+
+**Everything on the router that this package does NOT touch:** dnsmasq, its
+config and cache, `https-dns-proxy`, cron, and nothing else on the router is
+affected.
 
 ## Requirements
 
-- OpenWrt **22.03 or newer** — both package-manager generations: **25.12+**
-  (apk) and **22.03 – 24.10** (opkg). The installer detects the package
-  manager automatically. 21.02 and older are not supported (their rpcd
-  cannot run this package's ucode backend).
-- CPU in {`x86_64`, `aarch64`, `armv7l`/`armv8l`, `mips`, `mipsel`} — the
-  TrustTunnel client ships prebuilt binaries only for these. The installer
-  checks `uname -m` before installing anything, so an unsupported device
-  fails cleanly, before anything is changed.
-- Internet access from the router (GitHub must be reachable for install and
-  for the update check).
+- **OpenWrt 22.03 or newer**: `apk`-based systems need 25.12+, `opkg`-based
+  systems 22.03–24.10. The script figures out which package manager is in
+  use.
+- **CPU**: one of the five families the vendor builds for — `x86_64`,
+  `aarch64`, `armv7l`/`armv8l`, `mips`, `mipsel`. The installer probes
+  `uname -m` first and aborts before anything changes on unsupported
+  hardware.
+- **Internet access from the router**: needed once at install time, and
+  again whenever the Status page runs its update check.
 
 ## Installation
 
-One command on the router:
+Run the installer:
 
 ```sh
 sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/install.sh)"
 ```
 
-What the installer does:
+The script then:
 
-1. Checks that this is OpenWrt 22.03+ with a supported CPU and either `apk`
-   (25.12+) or `opkg` (22.03–24.10).
-2. Sets up the package repository — a signed apk repository (`apk/`
-   subdirectory) and a signed opkg repository (`opkg/` subdirectory) on
-   the GitHub Pages site, deployed by the release workflow — and installs
-   the corresponding public signing key.
-3. Installs dependencies: `kmod-tun`, `ip-full`, `nftables`, `curl`,
-   `ca-bundle` (no `dnsmasq-full` — the fork does not need nftset in
-   dnsmasq). Two of them are runtime dependencies of the client binaries
-   themselves, not of the app: `kmod-tun` (the client creates its own tun
-   device) and `ca-bundle` (the client verifies the endpoint's TLS
-   certificate against the CA bundle). `ip-full`, `nftables` and `curl`
-   serve the app's own routing and diagnostics.
-4. Installs `luci-app-trusttunnel` and the translation package from
-   the repository.
-5. The client binaries install automatically as a dependency
-   (`trusttunnel-client`) into `/opt/trusttunnel_client`.
-6. Restarts `rpcd` so LuCI sees the new backend.
+1. Checks the environment — OpenWrt 22.03+, the CPU family, the package
+   manager. The architecture gate runs before anything is changed.
+2. Points the package manager at the signed repositories served from the
+   GitHub Pages site of this project (`apk/` for 25.12+, `opkg/` for
+   22.03–24.10): the apk branch writes
+   `/etc/apk/repositories.d/trusttunnel.list` and
+   `/etc/apk/keys/trusttunnel.pub`; the opkg branch appends a
+   `src/gz trusttunnel <url>/opkg` line to `/etc/opkg/customfeeds.conf` and
+   copies the feed key into `/etc/opkg/keys/` (under the stable name and
+   the usign fingerprint).
+3. Installs the required packages `kmod-tun ip-full nftables curl ca-bundle`
+   — `dnsmasq-full` is not among them.
+4. Installs `luci-app-trusttunnel` and, on request,
+   `luci-i18n-trusttunnel-ru`; `trusttunnel-client` comes along as a
+   dependency, with its binaries in `/opt/trusttunnel_client`.
+5. Restarts `rpcd` so the new backend code is loaded.
+6. Runs `/etc/uci-defaults/40-luci-trusttunnel` immediately: the script
+   creates the firewall zone, the `lan → trusttunnel` forwarding, and seeds
+   the Default routing profile and the init script registration. It is
+   idempotent, so the same run at the next boot changes nothing.
+7. Returns the service to its previous state — a first install leaves it
+   disabled. Configure the endpoint first, then start the service.
 
-The repository entry stays configured on the router, so package updates are
-a plain `apk update && apk upgrade` (25.12+) or `opkg update && opkg upgrade`
-(22.03–24.10) — no need to re-run the installer: the client binary is a
-dependency of the package and updates with it.
-
-The service is left **disabled** after installation, on purpose: configure
-first, start second. Re-running the installer updates the package and the
-binary without touching your settings.
+Run the installer again to pull a newer package and client binary and to
+refresh the signing keys; `/etc/config/trusttunnel` is left alone.
 
 ## Configuration
 
-Open **LuCI → Services → TrustTunnel → Settings**:
+Open **Services → TrustTunnel → Settings** in LuCI. The page has three
+tabs:
 
-1. **Server** — press **Import…** and paste the config your server generated
-   (config file text or a `tt://` link), or fill in addresses, TLS host name,
-   user and password by hand. The import fills every endpoint field the
-   server can hand out, including `custom_sni`, `client_random`, the
-   transport, the anti-DPI / post-quantum / IPv6 / verification flags and the
-   DNS upstreams.
-2. **Routing** — keep the seeded **Default** profile (VPN mode) or create
-   your own. Each profile has a mode — **VPN** (tunnel everything except the
-   bypass rules) or **Bypass** (tunnel only the VPN rules) — and two rule
-   lists accepting a domain, `*.domain`, an IP address, `IP:port` or a CIDR
-   range. Assign the profile to the server on the Server tab.
-3. **General** — turn on **Start on boot**, **Save & Apply**, then press
-   **Start** on the Status page.
+- **Server**: the endpoint the client dials. The **Import…** button takes
+  what your server produces — the text of a config file, or a `tt://` link —
+  and populates each endpoint field the server is able to fill: addresses,
+  the TLS host name, credentials, the transport, `custom_sni`,
+  `client_random`, plus anti-DPI, IPv6 and certificate-verification
+  switches, and the DNS upstreams. Everything can also be typed by hand.
+- **Routing profiles**: the Default profile (VPN mode) is already seeded
+  here. Every profile gets a mode — **VPN** (everything is tunneled except
+  the bypass-list entries) or **Bypass** (only the VPN-list entries are
+  tunneled) — and two rule lists whose entries accept a domain, a `*.domain`
+  wildcard, an IP address, an `IP:port` pair or a CIDR range. The profile is
+  assigned to the server with the routing-profile selector on the Server
+  tab.
+- **General**: the "start on boot" flag. After Save & Apply, start the
+  service with the Start button on the Status page.
 
-Headless (UCI):
+The same configuration headless, over UCI:
 
 ```sh
-uci set trusttunnel.endpoint.hostname='vpn.example.com'
-uci add_list trusttunnel.endpoint.address='203.0.113.10:443'
-uci set trusttunnel.endpoint.username='alice'
-uci set trusttunnel.endpoint.password='secret'
-uci add_list trusttunnel.endpoint.dns_upstream='tls://1.1.1.1'
-uci set trusttunnel.endpoint.custom_sni='vpn.example.com'
-uci set trusttunnel.endpoint.client_random='0a0b0c/0f0f0f'
-
-# A bypass-mode profile: only the VPN rules go through the tunnel.
-p=$(uci add trusttunnel routing_profile)
-uci set trusttunnel."$p".name='Games'
-uci set trusttunnel."$p".mode='bypass'
-uci add_list trusttunnel."$p".vpn_rules='telegram.org'
-uci set trusttunnel.endpoint.routing_profile='Games'
-
+uci set trusttunnel.endpoint.hostname='tt.example.net'
+uci add_list trusttunnel.endpoint.address='198.51.100.7:443'
+uci set trusttunnel.endpoint.username='router'
+uci set trusttunnel.endpoint.password='change-me'
+uci add_list trusttunnel.endpoint.dns_upstream='1.1.1.1'
+uci set trusttunnel.endpoint.custom_sni='tt.example.net'
+uci set trusttunnel.endpoint.client_random='0a1b2c'
+uci add trusttunnel routing_profile
+uci set trusttunnel.@routing_profile[-1].name='Direct'
+uci set trusttunnel.@routing_profile[-1].mode='bypass'
+uci add_list trusttunnel.@routing_profile[-1].vpn_rules='*.example.com'
+uci add_list trusttunnel.@routing_profile[-1].vpn_rules='192.0.2.0/24'
+uci set trusttunnel.endpoint.routing_profile='Direct'
 uci set trusttunnel.main.enabled='1'
 uci commit trusttunnel
 /etc/init.d/trusttunnel enable
 /etc/init.d/trusttunnel start
 ```
 
+The routing-profile block is optional: without it (or with a name that
+matches no profile), the client falls back to the legacy `domains.direct`
+list.
+
 ## Behaviour
 
-- **All forwarded LAN traffic** is marked (fwmark `0x9527`) and routed via
-  table 880 through the client's tun device. The router's own traffic goes
-  out directly by default (enable "Route the router's own traffic too" to
-  change that).
-- **Routing profiles** decide, inside the client, what happens to a
-  connection after it entered the tunnel: in VPN mode everything except the
-  bypass rules is tunneled; in bypass mode only the VPN rules are. Domains
-  are matched by SNI, IPs and CIDRs by destination — the same mechanism the
-  old flat "do not bypass" list used, now with the other half of the
-  selection available too.
-- **Killswitch:** while the tunnel device is down, marked traffic falls into
-  a blackhole route — dropped, not leaked to the provider. The client's own
-  (application-level) killswitch is disabled in the generated config so the
-  two do not fight over the firewall.
-- **DNS:** the fork does not intercept or redirect DNS. LAN clients keep
-  using the router's resolver as configured in OpenWrt; the tunnel carries
-  the traffic itself.
-- **Status page** shows the service state, the assigned profile, the
-  client's tun device, the version of everything, and the client log.
-  **Diagnostics** walks the whole chain (config → client → tun → routing →
-  firewall → network) with a verdict and a hint for every check.
+- **Marking and routing.** LAN traffic forwarded into the `trusttunnel`
+  zone is marked with fwmark `0x9527`; a policy rule sends marked packets
+  to table `880`, whose default route leads to the client's tun device.
+  Traffic originating on the router itself is not marked by default
+  (`include_router_traffic` is off); it leaves through the ordinary default
+  route.
+- **Routing profiles.** Inside the tunnel the client itself decides where
+  each connection goes. VPN mode keeps everything in the tunnel except the
+  entries in the bypass list; Bypass mode puts only the VPN-list entries
+  into the tunnel. Domain entries are matched by SNI, while IP addresses
+  and CIDR ranges match on the destination — the same matching the legacy
+  flat list performed, but now both halves of the selection are explicit
+  rules.
+- **Killswitch.** Whenever the tun interface is down, the blackhole route
+  (metric `1000`) in table `880` swallows marked traffic. The generated
+  config turns the client's own killswitch off (`killswitch_enabled =
+  false`); the routing table does the protecting.
+- **Exclusions.** The `exclusions` list in the generated `client.toml` is
+  profile-based: with a VPN-mode profile it comes from
+  `routing_profile.bypass_rules`, with a Bypass-mode profile from
+  `routing_profile.vpn_rules` (the tunneled set), and from `domains.direct`
+  whenever nothing is assigned.
+- **DNS.** Nothing intercepts or rewrites DNS: the generated config sets
+  `change_system_dns = false`, and the router's resolver keeps serving the
+  LAN.
+- **LuCI pages.** The Status page presents the service state, the package
+  and client versions, the client log, and a Mode row that names the
+  assigned routing profile and which half of its rules goes through the
+  tunnel. It renders no device row — the client's tun device is inspected
+  in Diagnostics, whose Tunnel device check reports it. Diagnostics walks
+  the chain from configuration over the client and the tunnel device to
+  routing, firewall and network, with a verdict per check, and offers
+  `ping`, `probe` and `check_domain` tools.
 
 ## Updating
 
-The installer leaves the package repository configured on the router, so
-package updates are the standard package-manager commands:
+The repository entry installed by the setup script remains, so keeping the
+package current is a plain package-manager call:
 
 ```sh
-# apk (25.12+):
-apk update && apk upgrade
-# opkg (22.03–24.10):
-opkg update && opkg upgrade
+apk update && apk upgrade   # OpenWrt 25.12+
+opkg update && opkg upgrade # OpenWrt 22.03–24.10
 ```
 
-The client binary is a dependency of the package (`trusttunnel-client`),
-so it is updated by the same commands. Settings in `/etc/config/trusttunnel`
-are left untouched.
+`trusttunnel-client` is a hard dependency of the LuCI app, so the binary
+updates together with the package, and `/etc/config/trusttunnel` survives
+untouched.
 
 ## Uninstalling
 
-One command on the router:
+Run the uninstaller:
 
 ```sh
 sh -c "$(wget -O - https://raw.githubusercontent.com/i-zhirov/trusttunnel-openwrt/main/uninstall.sh)"
 ```
 
-What the script does:
+The script then:
 
-1. Stops the service and disables it (removes the autostart link).
-2. Removes both packages in a single call — `apk del` on 25.12+,
-   `opkg remove` on 22.03–24.10 (the i18n package is removed first,
-   because it depends on the main one).
-3. Removes the repository configuration the installer left behind: the apk
-   repositories.d entry and signing key, or the opkg feed line and feed key.
-4. Removes the client binary from `/opt/trusttunnel_client`, the cached
-   data and — if they survived from the original package — the lists, the
-   cron job and the dnsmasq include.
-5. Offers to remove the `trusttunnel` firewall zone and forwarding rule
-   (default: yes) and the settings in `/etc/config/trusttunnel`
-   (default: no — a reinstall then keeps your configuration).
-6. Restarts `rpcd` and clears the LuCI caches so the menu and pages
-   forget the removed package, then checks that no table, rule or route
-   is left in the kernel.
+1. Halts the service and disables its auto-start.
+2. Removes the packages in one call — `luci-i18n-trusttunnel-ru`,
+   `luci-app-trusttunnel`, `trusttunnel-client` (for opkg the dependents
+   must come first in the list).
+3. Tears down the repository configuration and the signing keys the
+   installer put in place.
+4. Removes the client binaries and the caches (`/opt/trusttunnel_client`,
+   `/usr/share/trusttunnel`, `/var/cache/trusttunnel`,
+   `/var/etc/trusttunnel`) and cleans the leftovers of the original
+   package: the stored lists, the `update_lists` cron line, and any
+   leftover dnsmasq include.
+5. Prompts whether to remove the firewall zone (default: yes) and for the
+   settings file (default: no — a reinstall keeps it).
+6. Restarts `rpcd`; the LuCI caches are wiped.
+7. Checks the kernel for leftovers — the nft table, the rule for table
+   `880`, routes in table `880`; anything still present means the service
+   did not stop cleanly and a reboot will clear it.
 
-Flags:
+Flags: `-y` answers every question with yes, removing the zone and the
+settings unprompted; `-c` keeps `/etc/config/trusttunnel` without asking.
+Shared dependencies (`kmod-tun`, `ip-full`, `nftables`, `curl`,
+`ca-bundle`) stay installed on purpose.
 
-- `-y` — answer yes to every question: remove the firewall zone and the
-  settings too;
-- `-c` — keep `/etc/config/trusttunnel`, do not ask.
-
-The dependencies (`kmod-tun`, `ip-full`, `nftables`, `curl`, `ca-bundle`)
-are left alone — they are shared and may be needed by other packages.
-
-If you prefer to uninstall by hand, step by step:
+Removing by hand works as well:
 
 ```sh
 /etc/init.d/trusttunnel stop
 /etc/init.d/trusttunnel disable
-
-# The i18n package must be in the SAME call (it depends on the main one).
-# apk (25.12+):
 apk del luci-i18n-trusttunnel-ru luci-app-trusttunnel
-# opkg (22.03-24.10) — the i18n package must be listed FIRST:
-opkg remove luci-i18n-trusttunnel-ru luci-app-trusttunnel
-
+# on 22.03–24.10: opkg remove luci-i18n-trusttunnel-ru luci-app-trusttunnel
 rm -rf /opt/trusttunnel_client
-
-# The repository entry and the signing keys left by the installer:
-# apk (25.12+):
-rm -f /etc/apk/repositories.d/trusttunnel.list /etc/apk/keys/trusttunnel.pub
-# opkg (22.03-24.10) — the feed key is named by its fingerprint:
-sed -i '/^src\/gz trusttunnel /d' /etc/opkg/customfeeds.conf
-rm -f /etc/opkg/keys/trusttunnel.pub
-```
-
-The `trusttunnel` firewall zone and the `lan → trusttunnel` forwarding rule
-remain in `/etc/config/firewall` — remove them by hand:
-
-```sh
+# remove the feed entry and the installed keys (paths above)
 uci show firewall | grep trusttunnel
-uci delete firewall.<zone_section>
-uci delete firewall.<forwarding_section>
+uci delete firewall.@zone[1]   # the section numbers from the listing
+uci delete firewall.@forwarding[1]
 uci commit firewall
 /etc/init.d/firewall restart
 ```
 
-Settings in `/etc/config/trusttunnel` remain after removing the package;
-delete the file if you do not want them.
-
 ## Differences from the original package
 
-| | original | this fork |
-|---|---|---|
-| Mode | selective (by list) or full | **routing profiles** (vpn/bypass), client-side |
-| Domain lists (itdoginfo/allow-domains) | yes | **no** |
-| dnsmasq-full requirement | yes (for selective) | **no** |
-| List downloads / cron / update_lists | yes | **no** |
-| List-DNS options, DoH proxy, DNS interception | yes | **no** |
-| Killswitch (blackhole route) | yes | **yes** |
-| Split tunneling | list-based, dnsmasq sets | **profile rules (domains/`*.domain`/IP/IP:port/CIDR)**, applied by the client |
-| LuCI pages, import, diagnostics, update check | yes | **yes** (trimmed) |
+| Aspect | Original luci-app-trusttunnel | This package |
+| --- | --- | --- |
+| Mode | Full, or selective driven by a list, chosen globally | Routing profiles with vpn/bypass modes, assigned per server and enforced by the client |
+| Domain lists | Community lists (itdoginfo, allow-domains) with downloads | None — the rules live in the routing profiles |
+| dnsmasq-full | Required for the `nftset=` machinery | Not required |
+| List updates | Downloads and a cron job (`update_lists`) | None — nothing is downloaded, no cron |
+| List DNS | DoH-proxy settings, list-DNS options, DNS interception | None — the client leaves DNS alone (`change_system_dns = false`) |
+| Killswitch | Blackhole route | Blackhole route (metric `1000`) — the same mechanism |
+| Split tunneling | List-based via dnsmasq sets | Profile rules — domains, `*.domain`, IP, `IP:port`, CIDR — enforced inside the client |
+| LuCI pages | Status, settings with import, diagnostics, update check | The same set: Status, Settings with import, Diagnostics, and the update check |
 
-Settings that were removed: `main.mode`, `main.full_exclude_lists`, the whole
-`lists` section, `network.list_dns`, `network.list_resolver`,
-`network.list_doh_url`, `network.list_doh_port`, `network.doh_network`,
-`network.intercept_dns`, `domains.bypass`.
+### Settings removed
 
-Settings that were added: `endpoint.custom_sni`, `endpoint.client_random`,
-`endpoint.routing_profile`, and the `routing_profile` sections (`name`,
-`mode`, `vpn_rules`, `bypass_rules`). `domains.direct` remains in the schema
-as the legacy fallback for when no profile is assigned; on upgrade its values
-are moved into the Default profile's bypass rules.
+`main.mode`, `main.full_exclude_lists`, the `lists` section,
+`network.list_dns`, `network.list_resolver`, `network.list_doh_url`,
+`network.list_doh_port`, `network.doh_network`, `network.intercept_dns`,
+`domains.bypass`.
+
+### Settings added
+
+`endpoint.custom_sni`, `endpoint.client_random`, and
+`endpoint.routing_profile`, plus the `routing_profile` sections themselves
+(`name`, `mode`, `vpn_rules`, `bypass_rules`). The `domains.direct` list
+stays in the schema, serving as the fallback while no profile is assigned;
+the seed step moves those values into the bypass rules of the profile named
+`Default`.
 
 ## Notes and caveats
 
-- The update check on the Status page targets this repository's releases —
-  the same GitHub releases that carry the package files for manual download.
-- The firewall zone matches `tun+`, so it also covers other VPNs' tun
-  devices if you run more than one.
-- The client binary comes from the official TrustTunnel installer; the
-  packages are installed from the signed repositories (the apk index is
-  signed with an EC key, the opkg feed with usign — both verified against
-  the public keys the installer installs). If you download `.apk`/`.ipk`
-  files manually, verify the SHA-256 from the release notes.
-- Both repositories live on this project's GitHub Pages site, deployed
-  directly by the release workflow (no branch holds the packages): the
-  translation package's version contains a `~` (LuCI's findrev format),
-  GitHub release asset names cannot contain `~`, and apk reconstructs
-  package file names from the version verbatim. Pages serves file names
-  byte-identically, so the site serves the indexes and the packages
-  unchanged — and the opkg repository shares the same location for
-  consistency.
-- Re-running the installer refreshes the signing keys, so a key rotation
-  only requires re-running it once on each router; existing installations
-  keep working (`apk update`/`opkg update` verify against the keys already
-  installed).
+- **Update check.** The Status page compares the installed version against
+  this repository's latest release
+  (`https://api.github.com/repos/i-zhirov/trusttunnel-openwrt/releases/latest`),
+  caching the answer in `/var/cache/trusttunnel/release.json` for 21600
+  seconds. The same releases also host the installable files.
+- **Firewall zone.** Because the zone binds the `tun+` wildcard, tun
+  devices created by other software fall under it too.
+- **Repositories and signing.** Both repositories are served from the
+  GitHub Pages site of this project
+  (`https://i-zhirov.github.io/trusttunnel-openwrt`), not from the GitHub
+  releases: the ru translation package carries `~` in its version (LuCI's
+  findrev scheme), a character GitHub replaces in release asset names,
+  while Pages serves file names byte-identically. The release workflow
+  publishes the site straight from CI; no branch ever holds the packages.
+  Signing: `adbsign` (EC key) for the apk index, `usign` for the opkg
+  feed.
+- **Manual downloads.** A `.apk` or `.ipk` fetched from the release assets
+  must be checked against the SHA-256 sums in the release notes.
+- **Key rotation.** The signing keys rotate; run the installer once more to
+  refresh the copies on the router.
 
 ## Acknowledgements
 
-- [NooBiToo/TrustTunnelOpenWrt](https://github.com/NooBiToo/TrustTunnelOpenWrt)
-  — the original package this fork is derived from (GPL-2.0)
-- [TrustTunnel/TrustTunnel](https://github.com/TrustTunnel/TrustTunnel) — the
-  protocol, server and client (Apache-2.0)
-- [TrustTunnel/TrustTunnelClient](https://github.com/TrustTunnel/TrustTunnelClient)
-  — the vendor client and its installer
+- [`NooBiToo/TrustTunnelOpenWrt`](https://github.com/NooBiToo/TrustTunnelOpenWrt)
+  — the upstream LuCI package whose GPL-2.0 code was reimplemented here (its design, not its code, survives)
+- [`TrustTunnel/TrustTunnel`](https://github.com/TrustTunnel/TrustTunnel)
+  — the server component (Apache-2.0)
+- [`TrustTunnel/TrustTunnelClient`](https://github.com/TrustTunnel/TrustTunnelClient)
+  — the client binary (Apache-2.0)
+
+## License
+
+Apache-2.0 (see `LICENSE`). The package is an independent reimplementation:
+it shares the design of the GPL-2.0 `luci-app-trusttunnel` package but
+contains no code from it; the GPL-2.0 text survives only in this
+repository's git history.

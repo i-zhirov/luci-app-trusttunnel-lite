@@ -1,40 +1,60 @@
-# Reading the records file: lines of the form "section.option<TAB>value".
-# Requires TT_RECORDS with the path to the file. Source with a dot.
+# Accessor helpers for the trusttunnel settings table.
 #
-# The "${TT_RECORDS:?...}" check sits at the START OF EVERY FUNCTION rather
-# than as a standalone line at the top level. All four real callers
-# (gen-config, gen-lists, fetch-lists, routing) `. records.sh` BEFORE
-# assigning TT_RECORDS from their argument — so a top-level check would
-# fire on every sourcing, before the caller could set the variable, and
-# would break all four generators for nothing. A check inside the functions
-# achieves the same goal — an unconfigured TT_RECORDS fails with a clear
-# error instead of silently becoming an empty file name on which awk
-# quietly reads stdin — but fires at the moment of the actual access, when
-# TT_RECORDS must already be set.
+# The settings file (path in $TT_RECORDS) is a tab-separated dump of the
+# UCI configuration: one record per line, "section.option<TAB>value".
+# A key may appear on several lines so that list options survive as
+# multiple records. A value ends at the first tab — tabs never occur
+# inside a value, while quotes and backslashes are ordinary characters
+# and are passed through untouched. Keys are compared as whole fields:
+# "edge.x" never matches a longer key such as "edge.x.y".
+#
+# This file is a library meant to be sourced, not executed. Callers
+# usually do not know the table path yet at source time, so sourcing
+# must succeed without TT_RECORDS; instead, each accessor refuses to run
+# unless the variable names an existing file. The accessors never write
+# to the settings file.
 
+# tt_list <key> — every value for the key, one per line, in file order;
+# prints nothing when the key is absent.
 tt_list() {
-	: "${TT_RECORDS:?TT_RECORDS is not set}"
-	awk -F'\t' -v k="$1" '$1 == k { print $2 }' "$TT_RECORDS"
+    tt_key=$1
+    awk -F '\t' -v key="$tt_key" \
+        '$1 == key { print $2 }' \
+        "${TT_RECORDS:?TT_RECORDS is not set}"
 }
 
+# tt_get <key> [default] — the first value for the key; an absent key or
+# an empty first value yields the default, and without a default the
+# output is an empty line.
 tt_get() {
-	: "${TT_RECORDS:?TT_RECORDS is not set}"
-	_v=$(awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$TT_RECORDS")
-	if [ -n "$_v" ]; then
-		printf '%s\n' "$_v"
-	else
-		printf '%s\n' "${2-}"
-	fi
+    tt_key=$1
+    tt_default=${2-}
+    awk -F '\t' -v key="$tt_key" -v fallback="$tt_default" \
+        '$1 == key { if ($2 != "") { print $2; found = 1 } exit }
+         END { if (!found) print fallback }' \
+        "${TT_RECORDS:?TT_RECORDS is not set}"
 }
 
+# tt_bool <key> [default] — prints "true" exactly when the effective
+# value is the single character 1, otherwise "false". The effective
+# value is the stored first value, or the default when the key is
+# absent or that value is empty; the default itself defaults to 0, so a
+# stored 0 still beats a true default.
 tt_bool() {
-	: "${TT_RECORDS:?TT_RECORDS is not set}"
-	_v=$(awk -F'\t' -v k="$1" '$1 == k { print $2; exit }' "$TT_RECORDS")
-	[ -n "$_v" ] || _v="${2-0}"
-	if [ "$_v" = "1" ]; then printf 'true\n'; else printf 'false\n'; fi
+    tt_key=$1
+    tt_default=${2-0}
+    awk -F '\t' -v key="$tt_key" -v fallback="$tt_default" \
+        '$1 == key { if ($2 != "") { if ($2 == "1") print "true"; else print "false"; found = 1 } exit }
+         END { if (!found) { if (fallback == "1") print "true"; else print "false" } }' \
+        "${TT_RECORDS:?TT_RECORDS is not set}"
 }
 
+# tt_count <key> — how many records carry the key, as a decimal number;
+# 0 when the key is absent.
 tt_count() {
-	: "${TT_RECORDS:?TT_RECORDS is not set}"
-	awk -F'\t' -v k="$1" '$1 == k { n++ } END { print n + 0 }' "$TT_RECORDS"
+    tt_key=$1
+    awk -F '\t' -v key="$tt_key" \
+        '$1 == key { seen = seen + 1 }
+         END { print seen + 0 }' \
+        "${TT_RECORDS:?TT_RECORDS is not set}"
 }

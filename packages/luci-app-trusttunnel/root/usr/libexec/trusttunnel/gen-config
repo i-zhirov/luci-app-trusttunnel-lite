@@ -1,150 +1,126 @@
 #!/bin/sh
-# Generates client.toml for trusttunnel_client from the records
-# configuration.
+# Generate the client.toml for the TrustTunnel client binary.
+#
 # Usage: gen-config <records-file> [pem-file]
+#
+# The records file is the tab-separated settings dump produced by
+# uci-export (see records.sh). The output is the client configuration:
+# the field set, values, order and formatting are a fixed contract, so
+# every key is emitted exactly as documented below and nothing else.
+#
+# The routing profile resolution mirrors the GUI: the assigned profile
+# is resolved by name into routing_profile.* records. A bypass-mode
+# profile tunnels only its vpn_rules; a vpn-mode profile tunnels
+# everything except its bypass_rules; anything else (no assignment, a
+# stale name, an unknown mode) falls back to the legacy domains.direct
+# list with the general mode.
+
 set -u
 
+# The library directory defaults to the script's own location; callers
+# may override it via TT_LIBDIR.
 TT_LIBDIR="${TT_LIBDIR:-$(dirname "$0")}"
-# The path is computed at run time; a static linter cannot resolve it.
-# shellcheck disable=SC1091
 . "$TT_LIBDIR/records.sh"
 
-# TT_RECORDS is read by the sourced records.sh via tt_get/tt_list — the
-# linter cannot see that connection because it does not follow sourcing.
-# shellcheck disable=SC2034
-TT_RECORDS="${1:?usage: gen-config <records-file> [pem-file]}"
-CERT_FILE="${2:-}"
+TT_RECORDS=${1:?usage: gen-config <records-file> [pem-file]}
 
-die() { printf 'gen-config: %s\n' "$1" >&2; exit 1; }
-
-# Escaping for a basic TOML string: backslash and double quote.
-esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
-
-# Prints a TOML array of strings from values on stdin, one per line.
-array_from_stdin() {
-	awk '
-		{
-			gsub(/\\/, "\\\\")
-			gsub(/"/, "\\\"")
-			items[n++] = "\"" $0 "\""
-		}
-		END {
-			out = ""
-			for (i = 0; i < n; i++) out = out (i ? ", " : "") items[i]
-			printf "[%s]", out
-		}
-	'
+# tt_esc <value> — print the value escaped for a TOML basic string:
+# backslashes first, then double quotes. sed, not awk: the awk gsub
+# replacement semantics differ between gawk and BSD awk for backslashes
+# (gawk follows POSIX and halves them, BSD awk does not), while sed's
+# replacement behaves identically everywhere.
+tt_esc() {
+    printf '%s\n' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-hostname=$(tt_get endpoint.hostname)
-username=$(tt_get endpoint.username)
-password=$(tt_get endpoint.password)
-[ -n "$hostname" ] || die "endpoint.hostname is not set"
-[ -n "$username" ] || die "endpoint.username is not set"
-[ -n "$password" ] || die "endpoint.password is not set"
-[ "$(tt_count endpoint.address)" != "0" ] || die "endpoint.address is not set"
-
-mtu=$(tt_get network.mtu 1350)
-loglevel=$(tt_get main.log_level info)
-protocol=$(tt_get endpoint.protocol http2)
-custom_sni=$(tt_get endpoint.custom_sni)
-client_random=$(tt_get endpoint.client_random)
-
-# The PEM is emitted as a literal multi-line TOML string: PEM cannot
-# contain apostrophes, so no escaping is needed. `awk 1` normalizes the
-# file, adding a trailing newline if absent — otherwise the closing
-# apostrophes would stick to the certificate's last line.
-emit_certificate() {
-	if [ -n "$CERT_FILE" ] && [ -s "$CERT_FILE" ]; then
-		printf "certificate = '''\n"
-		awk 1 "$CERT_FILE"
-		printf "'''"
-	else
-		printf 'certificate = ""'
-	fi
+# tt_array <key> — print every record for the key as one TOML array:
+# each item escaped like a scalar, items joined with ", " inside square
+# brackets; an absent key renders the empty array.
+tt_array() {
+    # Each item escaped like a scalar; sed for the same portability
+    # reason as tt_esc.
+    tt_list "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | awk 'BEGIN { printf "[" }
+        {
+            if (item++) printf ", "
+            printf "\"%s\"", $0
+        }
+        END { printf "]\n" }'
 }
 
-addresses=$(tt_list endpoint.address | array_from_stdin)
-dns_upstreams=$(tt_list endpoint.dns_upstream | array_from_stdin)
-
-# Routing profile semantics, mirroring the GUI client:
-#   mode vpn    -> vpn_mode "general":   everything through the tunnel,
-#                  the bypass rules go out directly (client exclusions)
-#   mode bypass -> vpn_mode "selective": only the VPN rules go through the
-#                  tunnel, everything else stays direct
-# The client applies both itself (vpn_mode + exclusions in client.toml),
-# after the kernel has already marked the traffic — exactly how the fork's
-# "do not bypass" list has always worked, just with the other half of the
-# selection now available.
-#
-# The profile is resolved by name in uci-export and exported under
-# routing_profile.*. When nothing is assigned (or the name no longer
-# matches — the profile was deleted or renamed), the legacy behavior
-# applies: vpn_mode general with the flat domains.direct list as
-# exclusions.
-rprofile=$(tt_get endpoint.routing_profile)
-pmode=""
-if [ -n "$rprofile" ] && [ "$(tt_get routing_profile.name)" = "$rprofile" ]; then
-	pmode=$(tt_get routing_profile.mode)
+# Mandatory records: the endpoint identity and at least one address.
+for tt_key in endpoint.hostname endpoint.username endpoint.password; do
+    if [ -z "$(tt_get "$tt_key")" ]; then
+        printf 'gen-config: %s is not set\n' "$tt_key" >&2
+        exit 1
+    fi
+done
+if [ "$(tt_count endpoint.address)" -lt 1 ]; then
+    printf 'gen-config: endpoint.address is not set\n' >&2
+    exit 1
 fi
-case "$pmode" in
-	bypass)
-		vpn_mode=selective
-		exclusions=$(tt_list routing_profile.vpn_rules | array_from_stdin)
-		;;
-	vpn)
-		vpn_mode=general
-		exclusions=$(tt_list routing_profile.bypass_rules | array_from_stdin)
-		;;
-	*)
-		vpn_mode=general
-		exclusions=$(tt_list domains.direct | array_from_stdin)
-		;;
+
+# Resolve the routing profile for vpn_mode and the exclusion list. The
+# mode is consulted only when a profile is assigned by name; any other
+# situation takes the legacy branch.
+tt_profile=$(tt_get endpoint.routing_profile)
+tt_mode=
+if [ -n "$tt_profile" ] && [ "$tt_profile" = "$(tt_get routing_profile.name)" ]; then
+    tt_mode=$(tt_get routing_profile.mode)
+fi
+case $tt_mode in
+    bypass)
+        tt_vpn_mode=selective
+        tt_exclusions_key=routing_profile.vpn_rules
+        ;;
+    vpn)
+        tt_vpn_mode=general
+        tt_exclusions_key=routing_profile.bypass_rules
+        ;;
+    *)
+        tt_vpn_mode=general
+        tt_exclusions_key=domains.direct
+        ;;
 esac
 
-# [listener.tun] has NO device_name and use_existing keys — they used to be
-# generated here, and that was a mistake. Verified against the reference
-# config that setup_wizard itself produces: the schema knows bound_if (the
-# interface for the client's OUTGOING connections, a different purpose),
-# included_routes, excluded_routes, mtu_size and change_system_dns. The
-# client silently ignored the invented keys and always created ITS OWN
-# device, while the one we created stayed without a carrier: the route in
-# table 880 pointed into a dead interface, marked traffic was dropped, and
-# check_domain kept answering "verdict: tunnel" all the while. Now the
-# client creates the device and the route is attached to it after start
-# (routing attach).
-#
-# included_routes and excluded_routes are left EMPTY deliberately: we own
-# the routing — via the mark and table 880. Handing it to the client would
-# mean losing the blackhole killswitch route and the single point of route
-# management.
-cat <<TOML
-# Generated by luci-app-trusttunnel. Do not edit: changes are overwritten.
-loglevel = "$(esc "$loglevel")"
-vpn_mode = "$(esc "$vpn_mode")"
-killswitch_enabled = false
-post_quantum_group_enabled = $(tt_bool endpoint.post_quantum 1)
-exclusions_tcp_early_ack_enabled = true
-exclusions_preresolve_enabled = true
-exclusions = ${exclusions}
+# Top-level block.
+printf '# Generated by luci-app-trusttunnel. Do not edit: changes are overwritten.\n'
+printf 'loglevel = "%s"\n' "$(tt_esc "$(tt_get main.log_level info)")"
+printf 'vpn_mode = "%s"\n' "$tt_vpn_mode"
+printf 'killswitch_enabled = false\n'
+printf 'post_quantum_group_enabled = %s\n' "$(tt_bool endpoint.post_quantum 1)"
+printf 'exclusions_tcp_early_ack_enabled = true\n'
+printf 'exclusions_preresolve_enabled = true\n'
+printf 'exclusions = %s\n' "$(tt_array "$tt_exclusions_key")"
 
-[endpoint]
-hostname = "$(esc "$hostname")"
-addresses = ${addresses}
-has_ipv6 = $(tt_bool endpoint.has_ipv6 1)
-username = "$(esc "$username")"
-password = "$(esc "$password")"
-custom_sni = "$(esc "$custom_sni")"
-client_random = "$(esc "$client_random")"
-skip_verification = $(tt_bool endpoint.skip_verification 0)
-$(emit_certificate)
-upstream_protocol = "$(esc "$protocol")"
-anti_dpi = $(tt_bool endpoint.anti_dpi 0)
-dns_upstreams = ${dns_upstreams}
+# Endpoint block.
+printf '\n[endpoint]\n'
+printf 'hostname = "%s"\n' "$(tt_esc "$(tt_get endpoint.hostname)")"
+printf 'addresses = %s\n' "$(tt_array endpoint.address)"
+printf 'has_ipv6 = %s\n' "$(tt_bool endpoint.has_ipv6 1)"
+printf 'username = "%s"\n' "$(tt_esc "$(tt_get endpoint.username)")"
+printf 'password = "%s"\n' "$(tt_esc "$(tt_get endpoint.password)")"
+printf 'custom_sni = "%s"\n' "$(tt_esc "$(tt_get endpoint.custom_sni)")"
+printf 'client_random = "%s"\n' "$(tt_esc "$(tt_get endpoint.client_random)")"
+printf 'skip_verification = %s\n' "$(tt_bool endpoint.skip_verification)"
+if [ "$#" -gt 1 ] && [ -s "$2" ]; then
+    # Multi-line literal: the file content normalized so the closing
+    # delimiter always starts on its own line.
+    # The literal delimiters in double quotes: the \x27 hex escape is
+    # not portable across printf implementations (bash yes, dash no).
+    printf "certificate = '''\n"
+    awk 1 "$2"
+    printf "'''\n"
+else
+    printf 'certificate = ""\n'
+fi
+printf 'upstream_protocol = "%s"\n' "$(tt_esc "$(tt_get endpoint.protocol http2)")"
+printf 'anti_dpi = %s\n' "$(tt_bool endpoint.anti_dpi)"
+printf 'dns_upstreams = %s\n' "$(tt_array endpoint.dns_upstream)"
 
-[listener.tun]
-included_routes = []
-excluded_routes = []
-mtu_size = ${mtu}
-change_system_dns = false
-TOML
+# Tun listener block: routing is owned by the package, so the route
+# lists stay empty and only the mtu and the dns switch are configurable.
+printf '\n[listener.tun]\n'
+printf 'included_routes = []\n'
+printf 'excluded_routes = []\n'
+printf 'mtu_size = %s\n' "$(tt_get network.mtu 1350)"
+printf 'change_system_dns = false\n'

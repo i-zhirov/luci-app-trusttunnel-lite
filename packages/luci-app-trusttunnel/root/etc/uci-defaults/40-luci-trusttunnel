@@ -1,165 +1,133 @@
 #!/bin/sh
-# Creates the firewall zone for the client's tun device.
-# Idempotent: a repeated run duplicates nothing.
-
-# OpenWrt library, absent on the linter's machine.
+# First-boot setup: repair the trusttunnel firewall zone and seed the
+# default routing profile on upgraded installs.
 # shellcheck disable=SC1091
 . /lib/functions.sh
 
-zone_exists=""
-# A variable with the `_` prefix rather than `local`: `local` is not in
-# POSIX, and `shellcheck -s sh` reports it (SC3043) with a non-zero exit
-# code, failing CI on the very first push. The rest of our scripts use
-# `_`-variables for the same reason, so this is consistent too.
-# Called via config_foreach, and _zname is assigned by config_get from the
-# OpenWrt library — neither is visible to the linter statically.
-# shellcheck disable=SC2329,SC2317,SC2154
-find_zone() {
-	config_get _zname "$1" name
-	[ "$_zname" = "trusttunnel" ] && zone_exists=1
+# Keep the first zone named trusttunnel and drop the later duplicates.
+# The callback is invoked indirectly by config_foreach from the OpenWrt
+# shell library, so shellcheck cannot see the call sites.
+# shellcheck disable=SC2329,SC2154
+_dedup_zone() {
+	_dz_sec=$1
+	config_get _dz_name "$_dz_sec" name
+	[ "$_dz_name" = "trusttunnel" ] || return 0
+	if [ -z "$_zone_sec" ]; then
+		_zone_sec=$_dz_sec
+	else
+		uci delete "firewall.$_dz_sec"
+		_removed=1
+	fi
 }
-config_load firewall
-config_foreach find_zone zone
 
-# Collapsing duplicate zones. An early version of this script read the zone
-# name with an EMPTY section argument (`config_get _zname "" name` instead
-# of `"$1"`), so zone_exists was never set and the creation block fired on
-# EVERY install. On a live router three identical trusttunnel zones and
-# three forwarding rules piled up — each generates `define
-# trusttunnel_devices`, fw4 failed with "redefinition of symbol", and the
-# whole firewall did not come up: the network lost LAN-to-WAN forwarding,
-# and only the list domains worked, because OUR zone masquerades them in
-# its own table.
-#
-# Keep the first trusttunnel zone and the first forwarding to it, delete the
-# rest. Runs before creation so duplicates are not mistaken for a missing
-# zone.
-_seen_zone=0
-# config_foreach + config_get, invisible to the linter.
-# shellcheck disable=SC2329,SC2317,SC2154
-dedup_zone() {
-	config_get _n "$1" name
-	[ "$_n" = "trusttunnel" ] || return 0
-	if [ "$_seen_zone" = "1" ]; then
-		uci delete "firewall.$1"
-		zone_deduped=1
+# Keep the first forwarding that targets trusttunnel and drop the rest.
+# shellcheck disable=SC2329,SC2154
+_dedup_forwarding() {
+	_df_sec=$1
+	config_get _df_dest "$_df_sec" dest
+	[ "$_df_dest" = "trusttunnel" ] || return 0
+	if [ -z "$_fwd_sec" ]; then
+		_fwd_sec=$_df_sec
 	else
-		_seen_zone=1
+		uci delete "firewall.$_df_sec"
+		_removed=1
 	fi
 }
-_seen_fwd=0
-# shellcheck disable=SC2329,SC2317,SC2154
-dedup_fwd() {
-	config_get _d "$1" dest
-	[ "$_d" = "trusttunnel" ] || return 0
-	if [ "$_seen_fwd" = "1" ]; then
-		uci delete "firewall.$1"
-		zone_deduped=1
-	else
-		_seen_fwd=1
+
+# Re-bind every zone after the first one to the tun+ wildcard. Runs only
+# after a dedup removed duplicate zones, mirroring the first-boot behavior
+# observed on the inherited script (a dedup is followed by a repair pass
+# over the remaining zones).
+# shellcheck disable=SC2329,SC2154
+_rebind_zone() {
+	_rz_sec=$1
+	if [ -z "$_first_zone_sec" ]; then
+		_first_zone_sec=$_rz_sec
+		return 0
 	fi
+	uci -q delete "firewall.$_rz_sec.device"
+	uci add_list "firewall.$_rz_sec.device"='tun+'
+	_migrated=1
 }
-zone_deduped=""
-config_foreach dedup_zone zone
-config_foreach dedup_fwd forwarding
-if [ -n "$zone_deduped" ]; then
+
+# Mark the presence of a routing profile; the seed block only fires when
+# the callback never runs.
+# shellcheck disable=SC2329
+_count_profiles() {
+	_has_profile=1
+}
+
+_zone_sec=""
+_fwd_sec=""
+_removed=""
+
+config_load firewall
+config_foreach _dedup_zone zone
+config_foreach _dedup_forwarding forwarding
+
+if [ -n "$_removed" ]; then
 	uci commit firewall
 	/etc/init.d/firewall reload >/dev/null 2>&1
 	logger -t trusttunnel "removed duplicate firewall zones left by an earlier version"
 fi
 
-if [ -z "$zone_exists" ]; then
-	z=$(uci add firewall zone)
-	uci set firewall."$z".name='trusttunnel'
-	uci set firewall."$z".input='REJECT'
-	uci set firewall."$z".output='ACCEPT'
-	uci set firewall."$z".forward='REJECT'
-	uci set firewall."$z".masq='1'
-	uci set firewall."$z".mtu_fix='1'
-	# A pattern, not a concrete name: the device is created by the CLIENT,
-	# which picks the name itself (tun0, then increasing); no setting
-	# governs it. A zone bound to our former tt0 would not cover the
-	# client's device at all — forwarding into the tunnel would be dropped
-	# by the firewall. The `tun+` syntax is the common convention for
-	# OpenWrt zones: OpenVPN configurations are laid out the same way.
-	#
-	# The side effect is deliberate: the zone will also cover foreign tun
-	# devices if another VPN runs on the router. The alternative — rewriting
-	# the zone on every service start and reloading the firewall — is more
-	# expensive and more visible.
-	uci add_list firewall."$z".device='tun+'
-
-	f=$(uci add firewall forwarding)
-	uci set firewall."$f".src='lan'
-	uci set firewall."$f".dest='trusttunnel'
-
+# Create the zone and its forwarding when no trusttunnel zone exists.
+if [ -z "$_zone_sec" ]; then
+	_new_zone=$(uci add firewall zone)
+	uci set "firewall.$_new_zone.name"='trusttunnel'
+	uci set "firewall.$_new_zone.input"='REJECT'
+	uci set "firewall.$_new_zone.output"='ACCEPT'
+	uci set "firewall.$_new_zone.forward"='REJECT'
+	uci set "firewall.$_new_zone.masq"='1'
+	uci set "firewall.$_new_zone.mtu_fix"='1'
+	uci add_list "firewall.$_new_zone.device"='tun+'
+	_new_fwd=$(uci add firewall forwarding)
+	uci set "firewall.$_new_fwd.src"='lan'
+	uci set "firewall.$_new_fwd.dest"='trusttunnel'
 	uci commit firewall
-	# Without a reload the zone and the forwarding rule exist only in UCI:
-	# tt0 belongs to no zone until the next reboot, forwarding into the
-	# tunnel is dropped, and the status page meanwhile shows the device,
-	# the rule, the table and nft as healthy — green on broken right after
-	# installation.
 	/etc/init.d/firewall reload >/dev/null 2>&1
 fi
 
-# Migration for already-installed routers. A zone created by a former
-# version is bound to the tt0 device, which we no longer create: the device
-# now belongs to the client and is named differently. Without this fix the
-# zone covers no live interface after an update, forwarding into the tunnel
-# is dropped by the firewall, and the status page shows the device, the
-# rule, the table and nft as healthy — the very "green on broken" we have
-# been eliminating throughout the project.
-#
-# The block above will not fire: it runs only when no zone exists yet.
-# Same case: called via config_foreach, assigned via config_get.
-# shellcheck disable=SC2329,SC2317,SC2154
-migrate_zone_device() {
-	config_get _zn "$1" name
-	[ "$_zn" = "trusttunnel" ] || return 0
-	_devs=$(uci -q get "firewall.$1.device" 2>/dev/null)
+# Migrate an old concrete tt0 binding to the tun+ wildcard.
+_migrated=""
+if [ -n "$_zone_sec" ]; then
+	# _devs comes from config_get, which shellcheck cannot trace.
+	config_get _devs "$_zone_sec" device
+	# shellcheck disable=SC2154
 	case " $_devs " in
-		*" tun+ "*) return 0 ;;
+		*" tun+ "*)
+			;;
+		*)
+			uci -q delete "firewall.$_zone_sec.device"
+			uci add_list "firewall.$_zone_sec.device"='tun+'
+			_migrated=1
+			;;
 	esac
-	uci -q delete "firewall.$1.device"
-	uci add_list "firewall.$1.device"='tun+'
-	zone_migrated=1
-}
-
-if [ -n "$zone_exists" ]; then
-	zone_migrated=""
-	config_foreach migrate_zone_device zone
-	if [ -n "$zone_migrated" ]; then
-		uci commit firewall
-		/etc/init.d/firewall reload >/dev/null 2>&1
-		logger -t trusttunnel "firewall zone migrated from tt0 to the tun+ wildcard"
+	if [ -n "$_removed" ]; then
+		# Reload the config so the repair pass walks the post-dedup
+		# sections, then re-bind every zone after the first one.
+		config_load firewall
+		_first_zone_sec=""
+		config_foreach _rebind_zone zone
 	fi
 fi
+if [ -n "$_migrated" ]; then
+	uci commit firewall
+	/etc/init.d/firewall reload >/dev/null 2>&1
+	logger -t trusttunnel "firewall zone migrated from tt0 to the tun+ wildcard"
+fi
 
-# --- Routing profiles --------------------------------------------------------
-#
-# The fork now mirrors the GUI client's routing profiles: named profiles with
-# a mode (vpn/bypass) and two rule lists, assigned per server via
-# endpoint.routing_profile. New installs get the Default profile from the
-# shipped /etc/config/trusttunnel. Upgrades keep their old config (it is
-# listed in conffiles), so this block creates the profile for them and moves
-# the old flat "do not bypass" list (domains.direct) into its bypass rules —
-# the resulting behavior is identical to the old one (vpn mode, the same
-# exclusions).
-config_load trusttunnel
+# Seed the default routing profile on installs that predate it: create the
+# profile, move every legacy domains.direct value into its bypass rules and
+# point the endpoint at it.
 _has_profile=""
-# config_foreach, invisible to the linter.
-# shellcheck disable=SC2329,SC2317
-count_profile() { _has_profile=1; }
-config_foreach count_profile routing_profile
+config_load trusttunnel
+config_foreach _count_profiles routing_profile
 
 if [ -z "$_has_profile" ]; then
 	_prof=$(uci add trusttunnel routing_profile)
 	uci set "trusttunnel.$_prof.name"='Default'
 	uci set "trusttunnel.$_prof.mode"='vpn'
-	# domains.direct is a list: `uci -q get` prints every value, one per
-	# line. A pipeline, not `for _d in $(...)`: the latter needs an
-	# unquoted expansion, which shellcheck flags and which also trips on
-	# empty input.
 	uci -q get trusttunnel.domains.direct 2>/dev/null | while IFS= read -r _d; do
 		[ -n "$_d" ] && uci add_list "trusttunnel.$_prof.bypass_rules"="$_d"
 	done
@@ -168,31 +136,11 @@ if [ -z "$_has_profile" ]; then
 	logger -t trusttunnel "created the default routing profile; the old direct list moved into its bypass rules"
 fi
 
-# The update check cache is reset on EVERY package install: it stores the
-# "latest release on GitHub", and after an update it certainly holds an
-# answer obtained before the installed version was released. Otherwise the
-# status page compares a fresh package with a stale answer and concludes
-# "up to date". This costs exactly one GitHub request on the first page
-# open.
+# Finalize: drop the stale release cache, register the rc.d link so the
+# service starts on boot (the enabled flag is only consulted inside
+# start_service) and clear the LuCI caches.
 mkdir -p /var/cache/trusttunnel
 rm -f /var/cache/trusttunnel/release.json
-
-
-# Registering the init script in the boot sequence. WITHOUT THIS the tunnel
-# does not come up after a router reboot at all: verified on live hardware —
-# after a reboot there was no link in /etc/rc.d/, not a single log line, the
-# service did not start.
-#
-# Two different "enabled"s are easy to confuse, and the defect rode exactly
-# on that: the "Enable" checkbox in the UI sets trusttunnel.main.enabled,
-# which is only a check INSIDE start_service. Auto-start is the rc.d link's
-# job, and nobody created it.
-#
-# The script is registered ALWAYS, regardless of main.enabled: start_service
-# itself exits at the beginning when the flag is off and logs that. Thus the
-# single decision ("whether to start") stays in one place instead of being
-# spread across two mechanisms with different semantics.
 /etc/init.d/trusttunnel enable >/dev/null 2>&1
-
 rm -f /tmp/luci-indexcache /tmp/luci-modulecache/* 2>/dev/null
 exit 0

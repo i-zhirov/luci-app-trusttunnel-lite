@@ -1,54 +1,107 @@
-# Asserts for the tests. Sourced via `. "$(dirname "$0")/lib.sh"`.
-# POSIX sh: counters are kept in files so they survive subshells.
+# Assertion helpers shared by every test in the suite.
+#
+# Counters live in plain files under $TT_TEST_TMP so that increments made
+# inside a subshell or a command substitution stay visible to the parent
+# shell. The runner exports TT_TEST_TMP; when a test runs standalone the
+# library creates and exports its own directory instead.
 
-TT_TEST_TMP="${TT_TEST_TMP:-$(mktemp -d)}"
-export TT_TEST_TMP
-[ -f "$TT_TEST_TMP/total" ] || echo 0 > "$TT_TEST_TMP/total"
-[ -f "$TT_TEST_TMP/failed" ] || echo 0 > "$TT_TEST_TMP/failed"
+if [ -z "${TT_TEST_TMP:-}" ]; then
+    TT_TEST_TMP=$(mktemp -d)
+    export TT_TEST_TMP
+fi
 
-_tt_bump() {
-	_f="$TT_TEST_TMP/$1"
-	echo $(( $(cat "$_f") + 1 )) > "$_f"
+tt_init_counters() {
+    for tt_counter in total failed; do
+        tt_counter_file=$TT_TEST_TMP/$tt_counter
+        if [ ! -f "$tt_counter_file" ]; then
+            printf '0\n' > "$tt_counter_file"
+        fi
+    done
 }
 
-_tt_pass() { _tt_bump total; echo "  ok: $1"; }
-_tt_fail() { _tt_bump total; _tt_bump failed; echo "  FAIL: $1"; }
+tt_bump_counter() {
+    tt_counter_name=$1
+    tt_counter_file=$TT_TEST_TMP/$tt_counter_name
+    tt_counter_value=$(cat "$tt_counter_file")
+    printf '%s\n' "$((tt_counter_value + 1))" > "$tt_counter_file"
+}
 
+# assert_eq <expected> <actual> <message>
 assert_eq() {
-	_tt_expected="$1"; _tt_actual="$2"; _tt_msg="$3"
-	if [ "$_tt_expected" = "$_tt_actual" ]; then
-		_tt_pass "$_tt_msg"
-	else
-		_tt_fail "$_tt_msg"
-		printf '    expected: %s\n    actual:   %s\n' "$_tt_expected" "$_tt_actual"
-	fi
+    tt_eq_expected=$1
+    tt_eq_actual=$2
+    tt_eq_message=$3
+    tt_bump_counter total
+    if [ "$tt_eq_expected" = "$tt_eq_actual" ]; then
+        printf '  ok: %s\n' "$tt_eq_message"
+    else
+        printf '  FAIL: %s\n' "$tt_eq_message"
+        printf '    expected: %s\n' "$tt_eq_expected"
+        printf '    actual:   %s\n' "$tt_eq_actual"
+        tt_bump_counter failed
+    fi
 }
 
+# assert_contains <haystack> <needle> <message>
 assert_contains() {
-	case "$1" in
-		*"$2"*) _tt_pass "$3" ;;
-		*)
-			_tt_fail "$3"
-			printf '    missing: %s\n    in:      %s\n' "$2" "$1"
-			;;
-	esac
+    tt_cc_haystack=$1
+    tt_cc_needle=$2
+    tt_cc_message=$3
+    tt_bump_counter total
+    case $tt_cc_haystack in
+        *"$tt_cc_needle"*)
+            printf '  ok: %s\n' "$tt_cc_message"
+            ;;
+        *)
+            printf '  FAIL: %s\n' "$tt_cc_message"
+            printf '    missing:  %s\n' "$tt_cc_needle"
+            printf '    haystack: %s\n' "$tt_cc_haystack"
+            tt_bump_counter failed
+            ;;
+    esac
 }
 
+# assert_exit <expected-status> <message> <command...>
+# The message precedes the command; this is the order every caller uses.
 assert_exit() {
-	_tt_want="$1"; _tt_msg="$2"; shift 2
-	"$@" >/dev/null 2>&1
-	_tt_got=$?
-	if [ "$_tt_got" = "$_tt_want" ]; then
-		_tt_pass "$_tt_msg"
-	else
-		_tt_fail "$_tt_msg"
-		printf '    expected exit %s, got %s\n' "$_tt_want" "$_tt_got"
-	fi
+    tt_ex_expected=$1
+    tt_ex_message=$2
+    shift 2
+    tt_bump_counter total
+    "$@" >/dev/null 2>&1
+    tt_ex_actual=$?
+    if [ "$tt_ex_actual" -eq "$tt_ex_expected" ]; then
+        printf '  ok: %s\n' "$tt_ex_message"
+    else
+        printf '  FAIL: %s\n' "$tt_ex_message"
+        printf '    expected exit status: %s\n' "$tt_ex_expected"
+        printf '    actual exit status:   %s\n' "$tt_ex_actual"
+        tt_bump_counter failed
+    fi
 }
 
-tt_test_summary() {
-	_tt_t=$(cat "$TT_TEST_TMP/total")
-	_tt_f=$(cat "$TT_TEST_TMP/failed")
-	printf '  %s assertions, %s failed\n' "$_tt_t" "$_tt_f"
-	[ "$_tt_f" = "0" ]
+# _tt_pass <message> — record an explicitly passing check.
+_tt_pass() {
+    tt_bump_counter total
+    printf '  ok: %s\n' "$1"
 }
+
+# _tt_fail <message> — record an explicitly failing check.
+_tt_fail() {
+    tt_bump_counter total
+    printf '  FAIL: %s\n' "$1"
+    tt_bump_counter failed
+}
+
+# tt_test_summary — prints the tally and exits 0 only when nothing failed.
+tt_test_summary() {
+    tt_sum_total=$(cat "$TT_TEST_TMP/total")
+    tt_sum_failed=$(cat "$TT_TEST_TMP/failed")
+    printf '  %s assertions, %s failed\n' "$tt_sum_total" "$tt_sum_failed"
+    if [ "$tt_sum_failed" -eq 0 ]; then
+        exit 0
+    fi
+    exit 1
+}
+
+tt_init_counters

@@ -24,11 +24,6 @@ config network 'network'
 	option include_router_traffic '0'
 	option lan_devices ''
 
-# Named routing profiles, mirroring the GUI client: each profile has a mode
-# (vpn — tunnel everything except the bypass rules; bypass — tunnel only the
-# VPN rules) and two rule lists. endpoint.routing_profile names the assigned
-# profile. The client applies the mode and the rules itself (vpn_mode +
-# exclusions in client.toml); the kernel marking stays unchanged.
 config routing_profile
 	option name 'Default'
 	option mode 'vpn'
