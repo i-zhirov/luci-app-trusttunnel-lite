@@ -1,15 +1,10 @@
 # trusttunnel-openwrt
 
-TrustTunnel client daemon for OpenWrt routers. The package is an
-independent implementation (Apache-2.0) of the same idea as
-[`luci-app-trusttunnel`](https://github.com/NooBiToo/TrustTunnelOpenWrt),
-whose GPL-2.0 code was fully reimplemented in this repository (see the
-Acknowledgements for the history); it targets OpenWrt **22.03 and newer**,
-runs the tunnel, exposes a LuCI control page and delivers the tunnel to
-the LAN.
+TrustTunnel client daemon for OpenWrt routers: it runs the tunnel, exposes
+a LuCI control page and delivers the tunnel to the LAN. It targets OpenWrt
+**22.03 and newer**.
 
-The original project's community-maintained domain lists are gone. Instead,
-the package is built around **named routing profiles**:
+The package is built around **named routing profiles**:
 
 - Each profile carries a **mode** and two rule lists.
 - **VPN mode** sends everything through the tunnel except the entries in the
@@ -23,9 +18,6 @@ the package is built around **named routing profiles**:
 - With no profile assigned (or a name that no longer matches any profile),
   the previous behavior takes over: everything goes into the tunnel, and the
   flat `domains.direct` list is applied as the exclusions.
-
-Nothing downloads lists, no cron job is installed, `dnsmasq-full` is not
-required, and no list-DNS options exist.
 
 **Everything on the router that this package touches:**
 
@@ -74,8 +66,8 @@ The script then:
    `src/gz trusttunnel <url>/opkg` line to `/etc/opkg/customfeeds.conf` and
    copies the feed key into `/etc/opkg/keys/` (under the stable name and
    the usign fingerprint).
-3. Installs the required packages `kmod-tun ip-full nftables curl ca-bundle`
-   — `dnsmasq-full` is not among them.
+3. Installs the required packages `kmod-tun ip-full nftables curl
+   ca-bundle`.
 4. Installs `luci-app-trusttunnel` and, on request,
    `luci-i18n-trusttunnel-ru`; `trusttunnel-client` comes along as a
    dependency, with its binaries in `/opt/trusttunnel_client`.
@@ -205,8 +197,8 @@ The script then:
    installer put in place.
 4. Removes the client binaries and the caches (`/opt/trusttunnel_client`,
    `/usr/share/trusttunnel`, `/var/cache/trusttunnel`,
-   `/var/etc/trusttunnel`) and cleans the leftovers of the original
-   package: the stored lists, the `update_lists` cron line, and any
+   `/var/etc/trusttunnel`) and cleans the leftovers of earlier versions
+   of the package: the stored lists, the `update_lists` cron line, and any
    leftover dnsmasq include.
 5. Prompts whether to remove the firewall zone (default: yes) and for the
    settings file (default: no — a reinstall keeps it).
@@ -236,35 +228,6 @@ uci commit firewall
 /etc/init.d/firewall restart
 ```
 
-## Differences from the original package
-
-| Aspect | Original luci-app-trusttunnel | This package |
-| --- | --- | --- |
-| Mode | Full, or selective driven by a list, chosen globally | Routing profiles with vpn/bypass modes, assigned per server and enforced by the client |
-| Domain lists | Community lists (itdoginfo, allow-domains) with downloads | None — the rules live in the routing profiles |
-| dnsmasq-full | Required for the `nftset=` machinery | Not required |
-| List updates | Downloads and a cron job (`update_lists`) | None — nothing is downloaded, no cron |
-| List DNS | DoH-proxy settings, list-DNS options, DNS interception | None — the client leaves DNS alone (`change_system_dns = false`) |
-| Killswitch | Blackhole route | Blackhole route (metric `1000`) — the same mechanism |
-| Split tunneling | List-based via dnsmasq sets | Profile rules — domains, `*.domain`, IP, `IP:port`, CIDR — enforced inside the client |
-| LuCI pages | Status, settings with import, diagnostics, update check | The same set: Status, Settings with import, Diagnostics, and the update check |
-
-### Settings removed
-
-`main.mode`, `main.full_exclude_lists`, the `lists` section,
-`network.list_dns`, `network.list_resolver`, `network.list_doh_url`,
-`network.list_doh_port`, `network.doh_network`, `network.intercept_dns`,
-`domains.bypass`.
-
-### Settings added
-
-`endpoint.custom_sni`, `endpoint.client_random`, and
-`endpoint.routing_profile`, plus the `routing_profile` sections themselves
-(`name`, `mode`, `vpn_rules`, `bypass_rules`). The `domains.direct` list
-stays in the schema, serving as the fallback while no profile is assigned;
-the seed step moves those values into the bypass rules of the profile named
-`Default`.
-
 ## Notes and caveats
 
 - **Update check.** The Status page compares the installed version against
@@ -291,7 +254,7 @@ the seed step moves those values into the bypass rules of the profile named
 ## Acknowledgements
 
 - [`NooBiToo/TrustTunnelOpenWrt`](https://github.com/NooBiToo/TrustTunnelOpenWrt)
-  — the upstream LuCI package whose GPL-2.0 code was reimplemented here (its design, not its code, survives)
+  — the upstream LuCI package that inspired this implementation
 - [`TrustTunnel/TrustTunnel`](https://github.com/TrustTunnel/TrustTunnel)
   — the server component (Apache-2.0)
 - [`TrustTunnel/TrustTunnelClient`](https://github.com/TrustTunnel/TrustTunnelClient)
@@ -299,7 +262,4 @@ the seed step moves those values into the bypass rules of the profile named
 
 ## License
 
-Apache-2.0 (see `LICENSE`). The package is an independent reimplementation:
-it shares the design of the GPL-2.0 `luci-app-trusttunnel` package but
-contains no code from it; the GPL-2.0 text survives only in this
-repository's git history.
+Apache-2.0 (see `LICENSE`).
