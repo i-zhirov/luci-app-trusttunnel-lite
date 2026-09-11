@@ -581,17 +581,19 @@ jobs:
           cp repo-site/opkg-index.md site/opkg/index.md
 
           # One index per architecture, listing what that directory
-          # actually holds: the signed index and every apk.
+          # actually holds: the signed index and every apk, each as a
+          # link to the file itself (a bare name would be dead text —
+          # Pages serves no directory listings).
           files="$(mktemp)"
           for d in site/apk/*/; do
             arch="$(basename "$d")"
             : > "$files"
             if [ -f "$d/packages.adb" ]; then
-              printf '%s\n' "- packages.adb" >> "$files"
+              printf '%s\n' "- [packages.adb](packages.adb)" >> "$files"
             fi
             for p in "$d"*.apk; do
               [ -e "$p" ] || continue
-              printf '%s\n' "- $(basename "$p")" >> "$files"
+              printf '%s\n' "- [$(basename "$p")]($(basename "$p"))" >> "$files"
             done
             # The r command consumes the rest of its line as the file
             # name: a "; d" after it would be swallowed and the brace
