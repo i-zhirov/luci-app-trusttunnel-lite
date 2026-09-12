@@ -53,6 +53,15 @@ for _ver in $TT_SDK_VERSION; do
 				-e "s,https://git.openwrt.org/project/,https://github.com/openwrt/," \
 				feeds.conf.default > feeds.conf
 			echo "src-link ttowrt /feed/" >> feeds.conf
+			# The SDK images pre-clone the feeds under /builder/feeds,
+			# owned by the buildbot user; git as root refuses them
+			# ("dubious ownership"). The feed directory names differ
+			# between image generations (base vs base_root), so whitelist
+			# whatever is already there instead of hardcoding names.
+			for feed in /builder/feeds/*/; do
+				[ -d "$feed" ] || continue
+				git config --global --add safe.directory "${feed%/}"
+			done
 			echo "== feeds update"
 			./scripts/feeds update -a
 			echo "== defconfig"
